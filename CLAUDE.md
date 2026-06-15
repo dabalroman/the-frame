@@ -49,9 +49,31 @@ ink, a soft terracotta accent + calm sage secondary, warm-tinted (not gray) shad
 `src/server/frameApi.ts` builds the API (`createFrameApi`) and `src/server/frameApiPlugin.ts`
 mounts it under `/api` on any connect/express stack. **Both** the Vite dev plugin
 (`vite.config.ts`) and the prod server (`server.ts`) call `mountFrameApi`, so dev and prod
-share one router. Currently only `GET /api/health`; gallery (#185) and calendar (#186)
-endpoints hang off the same factory. The SPA fallback in `server.ts` 404s `/api/*` so it never
-swallows API paths.
+share one router. The SPA fallback in `server.ts` 404s `/api/*` so it never swallows API paths.
+
+`frameApiPlugin.ts` dispatches by `pathname`/method (ported from eink-frame's `einkRouter`):
+`health` is matched first, everything else delegates to the image handlers. Calendar (#186)
+endpoints hang off the same factory.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/health` | `{ ok, version, gallery, calendar }` |
+| GET | `/api/config` | `{ width, height }` (panel defaults) |
+| GET | `/api/images` | list (name, size, mtime, crops), newest first |
+| POST | `/api/images[?force=1]` | multipart upload; 207 per-file results; `force` bypasses dedupe |
+| GET/DELETE | `/api/images/:name` | serve original / soft-delete to trash |
+| GET | `/api/images/:name/thumb?orientation=` | per-orientation thumb (300×180 / 180×300) |
+| GET/PUT/DELETE | `/api/images/:name/crop?orientation=` | get/set/clear one orientation's crop |
+| POST | `/api/images/:name/restore` | restore from trash (async, re-hashes) |
+| DELETE | `/api/trash/:name` | hard-delete |
+| GET | `/api/photo?orientation=&w=&h=` | **device path** — random orientation-filtered 1-bit PNG |
+| GET | `/api/photo/:name?orientation=` | named 1-bit PNG (crop-editor preview) |
+
+**Why `/photo` (not eink's bare `/:name` catch-all):** the shared `/api` namespace also carries
+`/health` and will carry calendar routes (#186), so the device path is explicitly prefixed to
+avoid shadowing them. The `/photo` endpoints keep **strict** per-orientation availability (404
+when the image has no crop for the requested orientation — no cross-orientation fallback); this
+is intentionally stricter than the gallery thumbnails (see Gallery below).
 
 ## Storage
 
@@ -59,9 +81,9 @@ Two **separate, independent** stores, both starting empty:
 
 - **Images** — on-disk blobs + **JSON sidecar metadata** (no SQL), `src/server/imageStore.ts`.
   Layout under `FRAME_GALLERY_DIR`: `<uuid>.jpg` blobs, `.metadata/<stem>.json` sidecars
-  (`{ width, height, crops: { horizontal?, vertical? } }`), `.thumbs/`, `.trash/`. Mirrors
-  eink-frame's store. Scaffold provides `list()` + sidecar reads only; the upload/crop/thumb/
-  dedupe pipeline is ported in **#185**.
+  (`{ width, height, crops: { horizontal?, vertical? } }`) + `.metadata/hashes.json` (dHash
+  index), `.thumbs/<stem>.<orientation>.jpg`, `.trash/`. The full upload/crop/thumb/dedupe
+  pipeline (ported from eink-frame in **#185**) lives here — see **Gallery** below.
 - **Calendar** — **SQLite** (better-sqlite3), `src/server/calendarDb.ts`, file at
   `FRAME_CALENDAR_DB`. **`journal_mode = DELETE`** (not WAL — WAL's mmap'd shm isn't coherent
   across bind mounts). Migrations live in `src/server/migrations/` as
@@ -72,6 +94,50 @@ Two **separate, independent** stores, both starting empty:
   - Server runs via `tsx`, never compiled, so `.ts` migrations are loaded at runtime via
     `createRequire`. Test the runner by passing a `Migration[]` to `runMigrations` directly
     (see `calendarDb.test.ts`) rather than relying on filesystem loading.
+
+## Gallery (#185 — ported from eink-frame)
+
+The image half is a **copy/port** of random-tools' eink-frame (no shared package). Backend logic
+is near-verbatim; only names (`eink`→`image`), the `/api` prefix, and the warm UI differ. When
+fixing a pipeline bug, check whether eink-frame has the same bug. The reverse port (this feature
+back to eink-frame) is tracked as **#189**.
+
+- **Pipeline** (`src/server/image/`): `dither` (Floyd-Steinberg, `Int16Array` — keep it),
+  `process` (`processForEink`: rotate→cover-resize→grayscale→**normalise before linear**→dither→
+  2-colour PNG; `cropWithWhiteFill` for oversize crops), `dhash` (perceptual hash), `hashIndex`
+  (`.metadata/hashes.json`, Hamming ≤10 dedupe). Geometry is `src/lib/crop.ts` (shared with the
+  client `CropEditor`; pure, no DOM/sharp).
+- **Per-orientation crops:** each image carries up to two independent crops (horizontal locked to
+  the panel W:H, vertical to the swapped H:W). Upload auto-seeds only the natural (longest-edge)
+  orientation. Sidecar back-compat: a legacy single `crop` reads as `crops.horizontal`.
+- **Oversize crops (#184):** a crop may zoom out past the image to contain-fit; coords legitimately
+  go **outside `[0,1]`** (white fills the gap). `clampCrop` is the keystone (contain-fit max +
+  ≥2-edge invariant); `putCrop` validates by re-clamping (rejects what the clamp would move) — this
+  doubles as a DoS guard. Every consumer must tolerate out-of-`[0,1]` coords.
+- **Thumbnails are per orientation:** `getThumbPath(name, orientation)` → 300×180 (h) or 180×300
+  (v), using that orientation's saved crop **or the auto-crop fallback**, so every image previews
+  in **both** orientations even with only one crop saved. Cached as `<stem>.<orientation>.jpg`;
+  `invalidateThumb` clears **both** on any crop change. This is looser than the device `/photo`
+  path on purpose (gallery = manage/preview; device = only serve what's actually been cropped).
+- **Gallery view orientation** (`useGalleryOrientation`): a persisted toggle (localStorage
+  `the-frame-gallery-orientation`, default horizontal). It re-renders the **whole** grid in one
+  orientation (uniform aspect, no per-image mixing) and seeds the crop modal's initial tab
+  (`CropEditor` `initialOrientation`).
+- **CropEditor is canvas-based.** Scene math (`computeLayout`), pan/pinch/wheel, and the ≥2-edge
+  invariant are ported verbatim. Canvas can't read CSS vars, so theme colors are hardcoded hex
+  (`PRIMARY` terracotta `#e56943`, `CANVAS_BG` parchment `#e9e2d6`, `DIM` warm scrim) — keep these
+  in sync if the tokens change. The canvas area is measured via a **callback ref** (Radix mounts
+  the dialog portal after effects run, so an empty-deps ResizeObserver would miss the node).
+- **Mobile UX:** the crop modal is `dvh`-sized (`h-[90dvh]` — `vh` overflows behind mobile browser
+  chrome); hints/“not set” render as bottom overlays on the image; footer actions are a 2-col grid
+  (primary spans full width on odd counts) collapsing to a right-aligned row on `sm+`. Upload is a
+  floating FAB on mobile (`UploadButton floating`, safe-area inset), an inline header button on
+  desktop. The orientation toggle is an iOS-style segmented control.
+- **Env (gallery):** `FRAME_MAX_UPLOAD_BYTES` (default 26214400), `FRAME_DEFAULT_W` (800),
+  `FRAME_DEFAULT_H` (480), `FRAME_DEFAULT_CONTRAST` (1.2) — read in `server.ts` + `vite.config.ts`,
+  passed through `mountFrameApi`. `multer` is a runtime dep (multipart upload).
+- **Routing:** `Gallery` renders at `/` (replacing the scaffold landing) until #187 wraps it in the
+  Picture↔Calendar shell.
 
 ## i18n
 
@@ -108,8 +174,9 @@ data. Test files live alongside source as `*.test.ts`.
 - **`src/vite-env.d.ts`** declares `*.scss`/`*.css` modules — without it, `tsc` (TS 6) errors on
   the `import './styles.scss'` side-effect import in `main.tsx`.
 
-## Scope of #183 (this scaffold) — what NOT to build here
+## Remaining epic work (#181) — what NOT to build outside its task
 
-Image upload/crop/thumbnail pipeline → **#185**. Calendar events table/CRUD/UI → **#186**.
-The Picture↔Calendar switcher + real navigation → **#187** (the current landing page is a
-throwaway placeholder). E-ink fetch/firmware → **#188**.
+Image gallery/crop/thumbnail pipeline → **#185 (done)**. Calendar events table/CRUD/UI → **#186**.
+The Picture↔Calendar switcher + real navigation → **#187** (the gallery currently sits at `/` as a
+stand-in). E-ink fetch/firmware → **#188**. Back-port the orientation toggle + per-orientation
+thumbnails to eink-frame → **#189**.
