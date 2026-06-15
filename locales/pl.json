@@ -1,0 +1,23 @@
+{
+  "app": {
+    "name": "The Frame",
+    "tagline": "Twoje zdjęcia i chwile, delikatnie oprawione."
+  },
+  "nav": {
+    "picture": "Zdjęcie",
+    "calendar": "Kalendarz"
+  },
+  "landing": {
+    "welcome": "Witaj w The Frame",
+    "scaffoldNote": "Fundament jest gotowy. Zdjęcia, kalendarz i ekran główny pojawią się wkrótce.",
+    "tryButton": "Wygląda przytulnie"
+  },
+  "language": {
+    "label": "Język",
+    "en": "English",
+    "pl": "Polski"
+  },
+  "toast": {
+    "hello": "Pozdrowienia z The Frame 🌞"
+  }
+}

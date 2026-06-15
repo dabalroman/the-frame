@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Single knob that scales the whole app. */
+    font-size: 16px;
+
+    /* ── The Frame — "sunlit linen" warm light palette ──────────────────────
+       Warm cream surfaces, espresso ink, a soft terracotta accent and a calm
+       sage secondary. Cozy home-photo-frame feel, not corporate. */
+    --background: 38 44% 96%;        /* warm linen */
+    --foreground: 26 22% 18%;        /* espresso ink */
+
+    --card: 40 56% 99%;              /* lifted warm white */
+    --card-foreground: 26 22% 18%;
+
+    --popover: 40 56% 99%;
+    --popover-foreground: 26 22% 18%;
+
+    --primary: 14 76% 58%;           /* soft terracotta / coral */
+    --primary-foreground: 40 56% 99%;
+
+    --secondary: 142 20% 90%;        /* calm sage surface */
+    --secondary-foreground: 150 24% 26%;
+
+    --muted: 36 28% 91%;             /* sand */
+    --muted-foreground: 30 10% 44%;
+
+    --accent: 30 50% 93%;            /* warm hover wash */
+    --accent-foreground: 14 60% 38%;
+
+    --destructive: 4 70% 55%;
+    --destructive-foreground: 40 56% 99%;
+
+    --border: 34 26% 87%;
+    --input: 34 26% 87%;
+    --ring: 14 76% 58%;
+
+    /* Generous rounding for a soft, tactile feel. */
+    --radius: 1rem;
+  }
+
+  * { @apply border-border; }
+
+  body {
+    @apply bg-background text-foreground font-sans text-base antialiased min-h-screen;
+    /* Faint warm radial glow so the background reads as lit, not flat. */
+    background-image:
+      radial-gradient(120% 80% at 50% -10%, hsl(40 60% 99% / 0.9), transparent 60%),
+      radial-gradient(90% 70% at 100% 0%, hsl(14 70% 92% / 0.35), transparent 55%);
+    background-attachment: fixed;
+  }
+
+  h1, h2, h3 {
+    @apply font-display font-medium tracking-tight text-foreground;
+  }
+
+  ::selection { background: hsl(var(--primary) / 0.22); color: hsl(var(--foreground)); }
+}
+
+@layer components {
+  /* Soft inset surface used for grouped rows / sheets. */
+  .surface-inset {
+    background: hsl(var(--muted) / 0.6);
+    border-radius: var(--radius);
+  }
+}

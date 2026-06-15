@@ -1,0 +1,23 @@
+{
+  "app": {
+    "name": "The Frame",
+    "tagline": "Your photos and moments, gently framed."
+  },
+  "nav": {
+    "picture": "Picture",
+    "calendar": "Calendar"
+  },
+  "landing": {
+    "welcome": "Welcome to The Frame",
+    "scaffoldNote": "The foundation is in place. Photos, calendar, and the home screen arrive next.",
+    "tryButton": "Looks cozy"
+  },
+  "language": {
+    "label": "Language",
+    "en": "English",
+    "pl": "Polski"
+  },
+  "toast": {
+    "hello": "Hello from The Frame 🌞"
+  }
+}

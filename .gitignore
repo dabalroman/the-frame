@@ -1,0 +1,15 @@
+node_modules
+dist
+.DS_Store
+*.log
+.env
+.env.local
+# Image gallery — runtime blobs + JSON sidecars, do not track
+frame-gallery/
+# Calendar SQLite DB — runtime state. Schema lives in src/server/migrations/
+frame-calendar.db
+frame-calendar.db-journal
+# Generated QR assets (regenerate per host with `npm run qr`)
+public/frame-qr.png
+public/frame-qr.svg
+public/frame-qr.html
