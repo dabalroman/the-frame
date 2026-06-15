@@ -31,6 +31,10 @@ export function UploadButton({ onFileDone, onUploadComplete, disabled, floating,
 
   const open = () => inputRef.current?.click();
 
+  // NOTE (#190): on Android Chrome 14/15, `accept="image/*" multiple` skips the system
+  // Photo Picker and opens the Files UI directly (no gallery grid) — `multiple` is the
+  // cause, and there is no web-side way to get the gallery without dropping it. We keep
+  // `multiple` (multi-select) by decision; the gallery limitation is OS/Chrome-side.
   return (
     <>
       <input
