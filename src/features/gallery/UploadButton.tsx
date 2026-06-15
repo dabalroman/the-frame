@@ -31,16 +31,21 @@ export function UploadButton({ onFileDone, onUploadComplete, disabled, floating,
 
   const open = () => inputRef.current?.click();
 
-  // NOTE (#190): on Android Chrome 14/15, `accept="image/*" multiple` skips the system
-  // Photo Picker and opens the Files UI directly (no gallery grid) — `multiple` is the
-  // cause, and there is no web-side way to get the gallery without dropping it. We keep
-  // `multiple` (multi-select) by decision; the gallery limitation is OS/Chrome-side.
+  // Mobile upload accept (#190): plain `accept="image/*" multiple` makes Android Chrome
+  // 14/15 open the Files UI *directly* — no Camera, no gallery grid. Appending the
+  // non-standard `android/allowCamera` token makes Chrome show an intent chooser with
+  // BOTH Camera and Files (multi-select preserved), which is what we want. The system
+  // Photo Picker / gallery grid is NOT reachable while `multiple` is set (Chrome
+  // limitation) — accepted. Mobile FAB only, so the desktop dialog keeps its clean
+  // image-only filter. Non-image picks are rejected server-side by the magic-byte check.
+  const accept = floating ? 'image/*,android/allowCamera' : 'image/*';
+
   return (
     <>
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept={accept}
         multiple
         className="hidden"
         onChange={handleChange}

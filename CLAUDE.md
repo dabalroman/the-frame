@@ -133,12 +133,13 @@ back to eink-frame) is tracked as **#189**.
   (primary spans full width on odd counts) collapsing to a right-aligned row on `sm+`. Upload is a
   floating FAB on mobile (`UploadButton floating`, safe-area inset), an inline header button on
   desktop. The orientation toggle is an iOS-style segmented control.
-  - **Android Chrome upload gotcha (#190, won't-fix):** with `accept="image/*" multiple`, Android
-    Chrome 14/15 skips the system Photo Picker and opens the Files UI directly — **no gallery
-    grid**. `multiple` is the trigger; there's no web-side way to get the gallery without dropping
-    it (the `android/allowCamera` accept token only adds a Camera option, verified on-device). We
-    keep `multiple` by decision. Don't re-investigate — the only fix is responsive single-select
-    on mobile, which was declined.
+  - **Android Chrome upload (#190):** plain `accept="image/*" multiple` makes Android Chrome 14/15
+    open the Files UI directly — no Camera, no gallery grid. The mobile FAB therefore uses
+    `accept="image/*,android/allowCamera"` (non-standard token, **mobile FAB only**) to force a
+    chooser with **Camera + Files (multi-select)**. The system Photo Picker / **gallery grid is
+    unreachable while `multiple` is set** (Chrome limitation) — accepted; the responsive
+    single-select-on-mobile fallback was offered and declined. Desktop input stays clean
+    `image/*`. Non-image picks are caught server-side (415).
 - **Env (gallery):** `FRAME_MAX_UPLOAD_BYTES` (default 26214400), `FRAME_DEFAULT_W` (800),
   `FRAME_DEFAULT_H` (480), `FRAME_DEFAULT_CONTRAST` (1.2) — read in `server.ts` + `vite.config.ts`,
   passed through `mountFrameApi`. `multer` is a runtime dep (multipart upload).
