@@ -52,12 +52,13 @@ mounts it under `/api` on any connect/express stack. **Both** the Vite dev plugi
 share one router. The SPA fallback in `server.ts` 404s `/api/*` so it never swallows API paths.
 
 `frameApiPlugin.ts` dispatches by `pathname`/method (ported from eink-frame's `einkRouter`):
-`health` is matched first, everything else delegates to the image handlers. Calendar (#186)
-endpoints hang off the same factory.
+`health` is matched first, then calendar `/events*` routes, then the gallery handlers. The
+calendar handlers come from `createEventApi(createEventStore(calendar.db))`, wired in
+`createFrameApi` alongside `image`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/health` | `{ ok, version, gallery, calendar }` |
+| GET | `/api/health` | `{ ok, version, gallery, calendar:{ ready, events } }` |
 | GET | `/api/config` | `{ width, height }` (panel defaults) |
 | GET | `/api/images` | list (name, size, mtime, crops), newest first |
 | POST | `/api/images[?force=1]` | multipart upload; 207 per-file results; `force` bypasses dedupe |
@@ -68,6 +69,9 @@ endpoints hang off the same factory.
 | DELETE | `/api/trash/:name` | hard-delete |
 | GET | `/api/photo?orientation=&w=&h=` | **device path** — random orientation-filtered 1-bit PNG |
 | GET | `/api/photo/:name?orientation=` | named 1-bit PNG (crop-editor preview) |
+| GET/POST | `/api/events` | list / create event (#186) |
+| PUT/DELETE | `/api/events/:id` | update / delete event |
+| GET | `/api/events/upcoming?days=N` | next-N-days occurrences, closest-first (#188 feed) |
 
 **Why `/photo` (not eink's bare `/:name` catch-all):** the shared `/api` namespace also carries
 `/health` and will carry calendar routes (#186), so the device path is explicitly prefixed to
@@ -89,11 +93,11 @@ Two **separate, independent** stores, both starting empty:
   across bind mounts). Migrations live in `src/server/migrations/` as
   `YYYYMMDDHHMMSS_slug.ts` exporting `name` (must equal the filename stem) + `up(db)`. The
   runner records applied names in `schema_migrations` (idempotent, with a downgrade guard) and
-  keeps `PRAGMA user_version` in sync. **The folder is empty in the scaffold** — opening the DB
-  only creates `schema_migrations`. The events table is **#186**'s first migration.
+  keeps `PRAGMA user_version` in sync. First migration: `20260615120000_create-events` (#186).
   - Server runs via `tsx`, never compiled, so `.ts` migrations are loaded at runtime via
-    `createRequire`. Test the runner by passing a `Migration[]` to `runMigrations` directly
-    (see `calendarDb.test.ts`) rather than relying on filesystem loading.
+    `createRequire`. **In tests** import the migration module directly and pass it to
+    `runMigrations` (see `eventStore.test.ts` / `calendarDb.test.ts`) — don't call
+    `loadMigrations()` (its `createRequire('*.ts')` path isn't transformed by vitest).
 
 ## Gallery (#185 — ported from eink-frame)
 
@@ -146,6 +150,31 @@ back to eink-frame) is tracked as **#189**.
 - **Routing:** `Gallery` renders at `/` (replacing the scaffold landing) until #187 wraps it in the
   Picture↔Calendar shell.
 
+## Calendar (#186)
+
+Custom events with a deliberately minimal recurrence model: `repeat` is **`none` or `yearly` only**
+(birthdays/anniversaries). Event shape `{ id, title, date, time?, repeat, description? }` — `title`
+is the one-line eink label (#188), `description` is app-only, no icon/category, no age math. `date`
+is `'YYYY-MM-DD'`; for yearly only month+day recur.
+
+- **Occurrence logic is pure** in `src/lib/recurrence.ts` (no DOM/SQL; dates are 'YYYY-MM-DD'
+  strings, UTC math, `today` is injected so it's testable): `occursOnDate` (month grid),
+  `nextOccurrence`, `upcomingEvents(today, days=3)` (the #188 feed, closest-first), `agenda` (stream
+  order: future closest-first, past one-offs last). **Feb 29 yearly events clamp to Feb 28** in
+  non-leap years. `src/lib/monthGrid.ts` is the **Monday-first** (PL) calendar matrix. Input
+  validation is `src/lib/event.ts`.
+- **Store/API:** `eventStore.ts` (prepared-statement CRUD + `upcoming`), `eventApi.ts` (JSON
+  handlers, validate at the boundary, `serverLocalToday()` for the feed — no UTC shift since the
+  frame lives in one timezone).
+- **UI** (`src/features/calendar/`, mirrors the gallery): `Calendar` hosts a **Month/Stream**
+  segmented toggle (persisted `the-frame-calendar-view`), `MonthView` (grid + month/year nav +
+  always-present "Today" below the grid; tap-day→`DaySheet`, tap-event→`EventDialog`), `EventStream`
+  (agenda), `EventDialog` (none/yearly via `SegmentedToggle`, optional time w/ clear button, delete
+  + undo). Dates localized via `Intl` (`format.ts`). Route `/calendar` until #187.
+- **Shared primitives:** `src/components/SegmentedToggle.tsx` (gallery orientation, calendar
+  view/repeat) and `src/components/Fab.tsx` (gallery upload, calendar add) were extracted so both
+  features stay visually identical — change them in one place.
+
 ## i18n
 
 `src/i18n.ts` initialises react-i18next. **Polish-first**: detection order is
@@ -183,7 +212,7 @@ data. Test files live alongside source as `*.test.ts`.
 
 ## Remaining epic work (#181) — what NOT to build outside its task
 
-Image gallery/crop/thumbnail pipeline → **#185 (done)**. Calendar events table/CRUD/UI → **#186**.
-The Picture↔Calendar switcher + real navigation → **#187** (the gallery currently sits at `/` as a
-stand-in). E-ink fetch/firmware → **#188**. Back-port the orientation toggle + per-orientation
-thumbnails to eink-frame → **#189**.
+Image gallery/crop/thumbnail pipeline → **#185 (done)**. Calendar events CRUD/views → **#186
+(done)**. The Picture↔Calendar switcher + real navigation → **#187** (gallery sits at `/`, calendar
+at `/calendar` as stand-ins). E-ink fetch/firmware → **#188** (consumes `/api/events/upcoming` +
+`/api/photo`). Back-port the orientation toggle + per-orientation thumbnails to eink-frame → **#189**.
