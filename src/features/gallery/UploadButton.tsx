@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { Fab } from '@/components/Fab';
 import { uploadFiles, type UploadResult } from './uploadFiles';
 
 export type { UploadResult };
@@ -51,20 +51,13 @@ export function UploadButton({ onFileDone, onUploadComplete, disabled, floating,
         onChange={handleChange}
       />
       {floating ? (
-        <button
-          type="button"
+        <Fab
           onClick={open}
           disabled={disabled}
-          aria-label={t('gallery.upload')}
-          className={cn(
-            'fixed bottom-6 right-5 z-30 inline-flex h-14 items-center gap-2 rounded-full bg-primary pl-5 pr-6 text-base font-semibold text-primary-foreground shadow-lifted transition-transform active:scale-95 disabled:opacity-60',
-            className
-          )}
-          style={{ bottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
-        >
-          <Upload className="h-5 w-5 shrink-0" strokeWidth={1.5} />
-          {t('gallery.upload')}
-        </button>
+          label={t('gallery.upload')}
+          icon={<Upload className="h-5 w-5 shrink-0" strokeWidth={1.5} />}
+          className={className}
+        />
       ) : (
         <Button size="sm" onClick={open} disabled={disabled} className={className}>
           <Upload className="h-4 w-4 shrink-0" strokeWidth={1.5} />

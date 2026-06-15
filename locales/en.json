@@ -61,5 +61,47 @@
       "uploadAnyway": "Add anyway",
       "skip": "Skip"
     }
+  },
+  "calendar": {
+    "title": "Calendar",
+    "status": {
+      "loading": "loading…",
+      "events_one": "{{count}} event",
+      "events_other": "{{count}} events"
+    },
+    "viewLabel": "Calendar view",
+    "viewMonth": "Month",
+    "viewStream": "List",
+    "add": "Add",
+    "addEvent": "Add event",
+    "addOnDay": "Add on this day",
+    "newEvent": "New event",
+    "editEvent": "Edit event",
+    "empty": "no events yet. add one to get started.",
+    "noEventsOnDay": "no events on this day.",
+    "today": "Today",
+    "prevMonth": "Previous month",
+    "nextMonth": "Next month",
+    "prevYear": "Previous year",
+    "nextYear": "Next year",
+    "yearly": "yearly",
+    "fieldTitle": "Title",
+    "titlePlaceholder": "e.g. Martha's birthday",
+    "fieldDate": "Date",
+    "fieldTime": "Time",
+    "clearTime": "Clear time",
+    "fieldRepeat": "Repeat",
+    "fieldDescription": "Description",
+    "repeatNone": "One-off",
+    "repeatYearly": "Yearly",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "deleted": "{{title}} removed.",
+    "undo": "Undo",
+    "validation": "Title and date are required.",
+    "saveFailed": "Couldn't save the event.",
+    "deleteFailed": "Couldn't remove the event."
   }
 }

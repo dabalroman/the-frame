@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Toaster } from './components/ui/sonner';
 import Gallery from './features/gallery/Gallery';
+import Calendar from './features/calendar/Calendar';
 
 /**
  * Gallery lives at `/` for now (#185). The real Picture ↔ Calendar shell that
@@ -19,6 +20,7 @@ export default function App() {
     <>
       <Routes>
         <Route path="/" element={<Gallery />} />
+        <Route path="/calendar" element={<Calendar />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <Toaster position="bottom-right" />

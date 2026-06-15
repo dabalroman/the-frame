@@ -27,7 +27,7 @@ export function mountFrameApi(stack: MiddlewareStack, opts: FrameApiOptions): vo
 
     if (method === 'GET' && pathname === '/health') return api.health(req, res);
 
-    void dispatch(pathname, method, req, res, next, api.image);
+    void dispatch(pathname, method, req, res, next, api);
   };
 
   stack.use('/api', handle);
@@ -39,9 +39,26 @@ async function dispatch(
   req: IncomingMessage,
   res: ServerResponse,
   next: Next | undefined,
-  image: FrameApi['image'],
+  api: FrameApi,
 ): Promise<void> {
+  const { image, events } = api;
   try {
+    // ── Calendar (#186) ──────────────────────────────────────────────────────
+    if (pathname === '/events') {
+      if (method === 'GET') return events.list(req, res);
+      if (method === 'POST') return await events.create(req, res);
+    }
+    if (method === 'GET' && pathname === '/events/upcoming') {
+      return events.upcoming(req, res);
+    }
+    const eventMatch = pathname.match(/^\/events\/(\d+)$/);
+    if (eventMatch) {
+      const id = Number(eventMatch[1]);
+      if (method === 'PUT') return await events.update(req, res, id);
+      if (method === 'DELETE') return events.remove(req, res, id);
+    }
+
+    // ── Gallery (#185) ───────────────────────────────────────────────────────
     if (method === 'GET' && pathname === '/config') {
       return image.config(req, res);
     }
