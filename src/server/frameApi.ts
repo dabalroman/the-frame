@@ -1,22 +1,21 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createImageStore } from './imageStore';
+import { createImageApi, type ImageApiOptions } from './imageApi';
 import { createCalendarStore } from './calendarDb';
 // Relative (not '@/') so server modules resolve outside Vite's alias — they're
 // bundled into vite.config and run under tsx, neither of which applies the alias.
 import { VERSION } from '../version';
 
-export type FrameApiOptions = {
-  galleryDir: string;
+export type FrameApiOptions = ImageApiOptions & {
   calendarDb: string;
 };
 
 /**
- * Builds The Frame's HTTP API. Scaffold scope (#183): initialises both stores
- * (proving the wiring) and exposes a single `health` handler. The gallery
- * (#185) and calendar (#186) endpoints hang off this same factory later.
+ * Builds The Frame's HTTP API. The gallery handlers (#185) are ported from
+ * eink-frame and exposed under `image`; `health` reports both stores. The
+ * calendar (#186) endpoints hang off this same factory later.
  */
 export function createFrameApi(opts: FrameApiOptions) {
-  const images = createImageStore({ galleryDir: opts.galleryDir });
+  const image = createImageApi(opts);
   const calendar = createCalendarStore({ dbPath: opts.calendarDb });
 
   function json(res: ServerResponse, status: number, body: unknown): void {
@@ -30,12 +29,12 @@ export function createFrameApi(opts: FrameApiOptions) {
     json(res, 200, {
       ok: true,
       version: VERSION,
-      gallery: { images: images.list().length },
+      gallery: { images: image.store.list().length },
       calendar: { ready: calendar.db.open },
     });
   }
 
-  return { health };
+  return { health, image };
 }
 
 export type FrameApi = ReturnType<typeof createFrameApi>;

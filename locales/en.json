@@ -19,5 +19,47 @@
   },
   "toast": {
     "hello": "Hello from The Frame 🌞"
+  },
+  "gallery": {
+    "title": "Photos",
+    "upload": "Upload",
+    "dropHere": "Drop photos to add them",
+    "empty": "No photos yet. Upload a few to get started.",
+    "status": {
+      "loading": "loading…",
+      "error": "couldn't load your photos",
+      "images_one": "{{count}} photo",
+      "images_other": "{{count}} photos",
+      "uploading": "Uploading {{done}} / {{total}}…"
+    },
+    "deleted": "{{name}} removed.",
+    "deleteFailed": "Couldn't remove the photo ({{status}}).",
+    "undo": "Undo",
+    "viewOrientation": "View orientation",
+    "orientation": {
+      "horizontal": "Horizontal",
+      "vertical": "Vertical"
+    },
+    "notSet": "not set",
+    "dragHint": "Drag to move · scroll or pinch to zoom",
+    "removeCrop": "Remove crop",
+    "cancel": "Cancel",
+    "saveCrop": "Save crop",
+    "saving": "Saving…",
+    "delete": "Delete",
+    "crop": "Crop",
+    "addCrop": "Add crop",
+    "einkPreview": "Frame preview",
+    "close": "Close",
+    "dup": {
+      "title": "Looks like a duplicate",
+      "body": "looks like a photo already in your gallery.",
+      "bodyMore_one": "{{count}} more to review after this.",
+      "bodyMore_other": "{{count}} more to review after this.",
+      "incoming": "New photo",
+      "matched": "Already in gallery",
+      "uploadAnyway": "Add anyway",
+      "skip": "Skip"
+    }
   }
 }

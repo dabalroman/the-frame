@@ -19,5 +19,51 @@
   },
   "toast": {
     "hello": "Pozdrowienia z The Frame 🌞"
+  },
+  "gallery": {
+    "title": "Zdjęcia",
+    "upload": "Wgraj",
+    "dropHere": "Upuść zdjęcia, aby je dodać",
+    "empty": "Brak zdjęć. Wgraj kilka, aby zacząć.",
+    "status": {
+      "loading": "ładowanie…",
+      "error": "nie udało się wczytać zdjęć",
+      "images_one": "{{count}} zdjęcie",
+      "images_few": "{{count}} zdjęcia",
+      "images_many": "{{count}} zdjęć",
+      "images_other": "{{count}} zdjęć",
+      "uploading": "Wgrywanie {{done}} / {{total}}…"
+    },
+    "deleted": "Usunięto {{name}}.",
+    "deleteFailed": "Nie udało się usunąć zdjęcia ({{status}}).",
+    "undo": "Cofnij",
+    "viewOrientation": "Orientacja widoku",
+    "orientation": {
+      "horizontal": "Poziomo",
+      "vertical": "Pionowo"
+    },
+    "notSet": "nie ustawiono",
+    "dragHint": "Przeciągnij, aby przesunąć · przewiń lub uszczypnij, aby przybliżyć",
+    "removeCrop": "Usuń kadr",
+    "cancel": "Anuluj",
+    "saveCrop": "Zapisz kadr",
+    "saving": "Zapisywanie…",
+    "delete": "Usuń",
+    "crop": "Kadruj",
+    "addCrop": "Dodaj kadr",
+    "einkPreview": "Podgląd ramki",
+    "close": "Zamknij",
+    "dup": {
+      "title": "To chyba duplikat",
+      "body": "wygląda jak zdjęcie, które już masz w galerii.",
+      "bodyMore_one": "Jeszcze {{count}} do sprawdzenia.",
+      "bodyMore_few": "Jeszcze {{count}} do sprawdzenia.",
+      "bodyMore_many": "Jeszcze {{count}} do sprawdzenia.",
+      "bodyMore_other": "Jeszcze {{count}} do sprawdzenia.",
+      "incoming": "Nowe zdjęcie",
+      "matched": "Już w galerii",
+      "uploadAnyway": "Dodaj mimo to",
+      "skip": "Pomiń"
+    }
   }
 }
