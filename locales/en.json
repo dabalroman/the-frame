@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "The Frame",
-    "tagline": "Your photos and moments, gently framed."
+    "tagline": "Everything that matters, on one screen."
   },
   "nav": {
     "picture": "Picture",
@@ -19,6 +19,11 @@
   },
   "toast": {
     "hello": "Hello from The Frame 🌞"
+  },
+  "home": {
+    "photos": { "title": "Photos", "description": "Browse and manage the pictures shown on your frame." },
+    "calendar": { "title": "Calendar", "description": "Birthdays and special days to remember." },
+    "back": "Home"
   },
   "gallery": {
     "title": "Photos",

@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "The Frame",
-    "tagline": "Twoje zdjęcia i chwile, delikatnie oprawione."
+    "tagline": "Wszystko, co ważne, na jednym ekranie."
   },
   "nav": {
     "picture": "Zdjęcie",
@@ -19,6 +19,11 @@
   },
   "toast": {
     "hello": "Pozdrowienia z The Frame 🌞"
+  },
+  "home": {
+    "photos": { "title": "Zdjęcia", "description": "Twoje zdjęcia w ramce." },
+    "calendar": { "title": "Kalendarz", "description": "Rocznice i ważne dni." },
+    "back": "Ekran główny"
   },
   "gallery": {
     "title": "Zdjęcia",

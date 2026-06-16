@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Plus, CalendarDays, List } from 'lucide-react';
 import LanguageToggle from '@/components/LanguageToggle';
+import HomeButton from '@/components/HomeButton';
 import { Button } from '@/components/ui/button';
 import { Fab } from '@/components/Fab';
 import { SegmentedToggle } from '@/components/SegmentedToggle';
@@ -39,6 +40,7 @@ export default function Calendar() {
 
   return (
     <div className="relative mx-auto flex min-h-screen max-w-screen-xl flex-col gap-6 p-4 sm:p-6">
+      <HomeButton />
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center justify-between gap-3">
           <div className="flex flex-col gap-0.5">

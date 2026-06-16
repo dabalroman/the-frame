@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import LanguageToggle from '@/components/LanguageToggle';
+import HomeButton from '@/components/HomeButton';
 import { useImages } from './useImages';
 import { useFrameConfig } from './useFrameConfig';
 import { useGalleryOrientation } from './useGalleryOrientation';
@@ -167,6 +168,7 @@ export default function Gallery() {
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
+      <HomeButton />
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center justify-between gap-3">
           <div className="flex flex-col gap-0.5">
