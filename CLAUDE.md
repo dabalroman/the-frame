@@ -200,6 +200,22 @@ vitest, Node environment (no DOM) — test pure logic, not React components. `sr
 redirects `FRAME_GALLERY_DIR` / `FRAME_CALENDAR_DB` to temp dirs so tests never touch real
 data. Test files live alongside source as `*.test.ts`.
 
+## Device renderer (#188)
+
+`src/server/deviceRenderer.ts` has two exports:
+
+- **`renderQrImage`** — dithered 1-bit PNG of the QR code at its natural square size.
+- **`renderEventsImage(lines, qrPath, w, h)`** — Polish-only events screen as a dithered 1-bit PNG.
+  Uses SVG → sharp (librsvg) → Floyd-Steinberg. **Font is `DejaVu Sans`** (system font, supports
+  Polish diacritics ą/ć/ę/ł/ń/ó/ś/ź/ż; Nunito/Fraunces are not available on the server).
+  QR is composited in the bottom-right corner; its size is clamped to `min(128, w-40, h-40)` so
+  small test images don't trigger sharp's "composite must be same size or smaller" error.
+
+`/api/device/frame` is the **primary device endpoint** — the server rolls the X% chance and
+returns either a rendered events PNG or a random photo. The ESPHome firmware calls only this
+endpoint (plus `/api/device/qr` for the WiFi info screen). `/api/device/events` and
+`/api/device/photo` remain available but are no longer called by the firmware.
+
 ## Gotchas
 
 - **Server modules must not use `@/` for value imports.** The server chain is bundled into
