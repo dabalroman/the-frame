@@ -147,8 +147,7 @@ back to eink-frame) is tracked as **#189**.
 - **Env (gallery):** `FRAME_MAX_UPLOAD_BYTES` (default 26214400), `FRAME_DEFAULT_W` (800),
   `FRAME_DEFAULT_H` (480), `FRAME_DEFAULT_CONTRAST` (1.2) — read in `server.ts` + `vite.config.ts`,
   passed through `mountFrameApi`. `multer` is a runtime dep (multipart upload).
-- **Routing:** `Gallery` renders at `/` (replacing the scaffold landing) until #187 wraps it in the
-  Picture↔Calendar shell.
+- **Routing:** `Gallery` renders at `/photos`. The hub (`/`) links to it via a large nav card.
 
 ## Calendar (#186)
 
@@ -170,7 +169,7 @@ is `'YYYY-MM-DD'`; for yearly only month+day recur.
   segmented toggle (persisted `the-frame-calendar-view`), `MonthView` (grid + month/year nav +
   always-present "Today" below the grid; tap-day→`DaySheet`, tap-event→`EventDialog`), `EventStream`
   (agenda), `EventDialog` (none/yearly via `SegmentedToggle`, optional time w/ clear button, delete
-  + undo). Dates localized via `Intl` (`format.ts`). Route `/calendar` until #187.
+  + undo). Dates localized via `Intl` (`format.ts`). Route `/calendar`.
 - **Shared primitives:** `src/components/SegmentedToggle.tsx` (gallery orientation, calendar
   view/repeat) and `src/components/Fab.tsx` (gallery upload, calendar add) were extracted so both
   features stay visually identical — change them in one place.
@@ -210,9 +209,12 @@ data. Test files live alongside source as `*.test.ts`.
 - **`src/vite-env.d.ts`** declares `*.scss`/`*.css` modules — without it, `tsc` (TS 6) errors on
   the `import './styles.scss'` side-effect import in `main.tsx`.
 
+## Navigation shell (#187 — done)
+
+Routes: `/` → **Home hub** (`src/features/home/Home.tsx`), `/photos` → Gallery, `/calendar` → Calendar. The hub is a landing screen with two large descriptive nav cards — **not** a bottom tab bar or top segmented control (both were considered and rejected: tab bar collides with the FAB, segmented control stacks awkwardly with per-section controls). Both Gallery and Calendar render a shared `<HomeButton/>` (`src/components/HomeButton.tsx`) as a back-to-hub affordance.
+
 ## Remaining epic work (#181) — what NOT to build outside its task
 
 Image gallery/crop/thumbnail pipeline → **#185 (done)**. Calendar events CRUD/views → **#186
-(done)**. The Picture↔Calendar switcher + real navigation → **#187** (gallery sits at `/`, calendar
-at `/calendar` as stand-ins). E-ink fetch/firmware → **#188** (consumes `/api/events/upcoming` +
+(done)**. Navigation shell → **#187 (done)**. E-ink fetch/firmware → **#188** (consumes `/api/events/upcoming` +
 `/api/photo`). Back-port the orientation toggle + per-orientation thumbnails to eink-frame → **#189**.
