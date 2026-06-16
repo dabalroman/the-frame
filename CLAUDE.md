@@ -72,7 +72,8 @@ calendar handlers come from `createEventApi(createEventStore(calendar.db))`, wir
 | GET/POST | `/api/events` | list / create event (#186) |
 | PUT/DELETE | `/api/events/:id` | update / delete event |
 | GET | `/api/events/upcoming?days=N` | next-N-days occurrences, closest-first (#188 feed) |
-| GET | `/api/device/photo?orientation=&w=&h=` | random orientation-filtered 1-bit PNG for device |
+| GET | `/api/device/frame?orientation=&w=&h=&days=&chance=` | **primary device path** — server-dispatched: returns server-rendered events PNG (X% chance when events exist) or random photo; device is dumb |
+| GET | `/api/device/photo?orientation=&w=&h=` | random orientation-filtered 1-bit PNG for device (used as fallback internally) |
 | GET | `/api/device/events?days=N` | pre-formatted Polish event lines, max 8, `\n`-delimited |
 | GET | `/api/device/qr` | 1-bit PNG: `public/frame-qr.png` at natural square size |
 

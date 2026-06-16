@@ -39,7 +39,7 @@ function makeApi(tmpDir: string) {
 type FakeRes = {
   statusCode: number;
   setHeader(k: string, v: string): void;
-  end(s?: string): void;
+  end(s?: string | Buffer): void;
   readonly body: string;
 };
 
@@ -48,7 +48,7 @@ function fakeRes(): FakeRes {
   return {
     statusCode: 0,
     setHeader(_k: string, _v: string) {},
-    end(s?: string) { body = s ?? ''; },
+    end(s?: string | Buffer) { body = s == null ? '' : typeof s === 'string' ? s : s.toString('binary'); },
     get body() { return body; },
   } as FakeRes;
 }
@@ -71,6 +71,40 @@ function futureDateIso(daysAhead: number): string {
 let tmpDir: string;
 beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'device-api-test-')); });
 afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+describe('deviceApi frame dispatch', () => {
+  it('returns 404 when no images and no events (photo path)', async () => {
+    const { api } = makeApi(tmpDir);
+    const res = fakeRes();
+    await api.frame(fakeReq('/api/device/frame?chance=0'), res as unknown as ServerResponse);
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('returns 404 when events exist but chance=0 (always photo path)', async () => {
+    const { api, eventStore } = makeApi(tmpDir);
+    eventStore.add({ title: 'Martha', date: todayIso(), time: null, repeat: 'none', description: null });
+    const res = fakeRes();
+    await api.frame(fakeReq('/api/device/frame?chance=0'), res as unknown as ServerResponse);
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('returns 200 PNG when events exist and chance=100', async () => {
+    const { api, eventStore } = makeApi(tmpDir);
+    eventStore.add({ title: 'Martha', date: todayIso(), time: null, repeat: 'none', description: null });
+    // qrPath is tmpDir/qr.png — not created here; renderEventsImage will throw → falls back to photo
+    // To test the events path, create a stub QR file
+    const qrFile = path.join(tmpDir, 'qr.png');
+    const { default: sharp } = await import('sharp');
+    await sharp({
+      create: { width: 64, height: 64, channels: 3, background: { r: 0, g: 0, b: 0 } },
+    }).png().toFile(qrFile);
+
+    const res = fakeRes();
+    await api.frame(fakeReq('/api/device/frame?chance=100&w=200&h=100'), res as unknown as ServerResponse);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.slice(1, 4)).toBe('PNG');
+  });
+});
 
 describe('deviceApi events', () => {
   it('formats today event with ★ prefix', () => {

@@ -44,6 +44,7 @@ async function dispatch(
   const { image, events, device } = api;
   try {
     // ── Device (#188) ────────────────────────────────────────────────────────
+    if (method === 'GET' && pathname === '/device/frame') return await device.frame(req, res);
     if (method === 'GET' && pathname === '/device/photo') return await device.photo(req, res);
     if (method === 'GET' && pathname === '/device/events') return device.events(req, res);
     if (method === 'GET' && pathname === '/device/qr') return await device.qr(req, res);
