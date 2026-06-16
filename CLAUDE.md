@@ -72,6 +72,9 @@ calendar handlers come from `createEventApi(createEventStore(calendar.db))`, wir
 | GET/POST | `/api/events` | list / create event (#186) |
 | PUT/DELETE | `/api/events/:id` | update / delete event |
 | GET | `/api/events/upcoming?days=N` | next-N-days occurrences, closest-first (#188 feed) |
+| GET | `/api/device/photo?orientation=&w=&h=` | random orientation-filtered 1-bit PNG for device |
+| GET | `/api/device/events?days=N` | pre-formatted Polish event lines, max 8, `\n`-delimited |
+| GET | `/api/device/qr` | 1-bit PNG: `public/frame-qr.png` at natural square size |
 
 **Why `/photo` (not eink's bare `/:name` catch-all):** the shared `/api` namespace also carries
 `/health` and will carry calendar routes (#186), so the device path is explicitly prefixed to
@@ -213,8 +216,41 @@ data. Test files live alongside source as `*.test.ts`.
 
 Routes: `/` → **Home hub** (`src/features/home/Home.tsx`), `/photos` → Gallery, `/calendar` → Calendar. The hub is a landing screen with two large descriptive nav cards — **not** a bottom tab bar or top segmented control (both were considered and rejected: tab bar collides with the FAB, segmented control stacks awkwardly with per-section controls). Both Gallery and Calendar render a shared `<HomeButton/>` (`src/components/HomeButton.tsx`) as a back-to-hub affordance.
 
-## Remaining epic work (#181) — what NOT to build outside its task
+## Device firmware (#188)
 
-Image gallery/crop/thumbnail pipeline → **#185 (done)**. Calendar events CRUD/views → **#186
-(done)**. Navigation shell → **#187 (done)**. E-ink fetch/firmware → **#188** (consumes `/api/events/upcoming` +
-`/api/photo`). Back-port the orientation toggle + per-orientation thumbnails to eink-frame → **#189**.
+ESPHome firmware for the TRMNL Seeed Studio 7.5" e-ink device. Source at
+`esphome/the-frame-display.yaml`.
+
+**Deploy:**
+```bash
+sudo cp ~/projects/the-frame/esphome/the-frame-display.yaml ~/hassio/homeassistant/esphome/
+```
+Then flash via the ESPHome dashboard or `esphome run`.
+
+**Hardware:** XIAO ESP32-S3 Plus. **3 user-programmable buttons** (D3 skipped, not on PCB):
+| Button | GPIO | Action |
+|---|---|---|
+| KEY1 (D1) | GPIO2 | Refresh in current orientation |
+| KEY2 (D2) | GPIO3 | Toggle orientation H↔V, then refresh |
+| KEY3 (D4) | GPIO5 | WiFi SSID + signal bars + QR code; stays awake (OTA available); any button press → refresh normal content → sleep |
+| KEY4 (EN) | — | Hardware RESET only — not programmable |
+
+**Deep sleep:** timer (60 min) + EXT1 ANY_LOW (GPIO2∥3∥5). e-ink retains image during sleep.
+
+**Boot flow:** fetch `/api/device/events?days=N` → non-empty + `esp_random() % 100 < events_chance` → show event poster; otherwise fetch `/api/device/photo` → display → sleep.
+
+**Key substitutions in `esphome/the-frame-display.yaml`:**
+| Substitution | Default | Notes |
+|---|---|---|
+| `frame_url` | `http://192.168.0.4:7375` | Update before flash |
+| `deep_sleep_minutes` | `60` | Timer wakeup interval |
+| `events_days` | `3` | Days ahead to fetch events |
+| `events_chance` | `30` | 0–100 % chance of showing events when events exist (device-side randomness) |
+
+**QR asset:** `public/frame-qr.png` — regenerate with `npm run qr` when the LAN IP changes. Served as-is (natural square size) by `/api/device/qr`; device renders it on the right half of the WiFi+QR screen.
+
+No HA API component (removes keep-alive overhead vs. the original `trmnl.yaml`).
+
+## Remaining work
+
+Back-port orientation toggle + per-orientation thumbnails to eink-frame → **#189** (open).

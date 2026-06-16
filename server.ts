@@ -16,6 +16,7 @@ const DEFAULT_W = parseEnvInt(process.env.FRAME_DEFAULT_W, 'FRAME_DEFAULT_W', 80
 const DEFAULT_H = parseEnvInt(process.env.FRAME_DEFAULT_H, 'FRAME_DEFAULT_H', 480);
 const DEFAULT_CONTRAST = parseEnvFloat(process.env.FRAME_DEFAULT_CONTRAST, 'FRAME_DEFAULT_CONTRAST', 1.2);
 
+
 const app = express();
 app.use(express.json());
 
@@ -26,6 +27,7 @@ mountFrameApi(app, {
   defaultW: DEFAULT_W,
   defaultH: DEFAULT_H,
   defaultContrast: DEFAULT_CONTRAST,
+
 });
 
 app.use(express.static(dist, { index: 'index.html', maxAge: '1h' }));

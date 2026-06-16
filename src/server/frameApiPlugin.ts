@@ -41,8 +41,13 @@ async function dispatch(
   next: Next | undefined,
   api: FrameApi,
 ): Promise<void> {
-  const { image, events } = api;
+  const { image, events, device } = api;
   try {
+    // ── Device (#188) ────────────────────────────────────────────────────────
+    if (method === 'GET' && pathname === '/device/photo') return await device.photo(req, res);
+    if (method === 'GET' && pathname === '/device/events') return device.events(req, res);
+    if (method === 'GET' && pathname === '/device/qr') return await device.qr(req, res);
+
     // ── Calendar (#186) ──────────────────────────────────────────────────────
     if (pathname === '/events') {
       if (method === 'GET') return events.list(req, res);
