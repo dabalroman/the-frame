@@ -6,6 +6,9 @@ import type { EventInput, Repeat } from '@/types/event';
  * optional fields to null.
  */
 
+export const TITLE_MAX = 32;
+export const DESCRIPTION_MAX = 128;
+
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^\d{2}:\d{2}$/;
 const REPEATS: Repeat[] = ['none', 'yearly'];
@@ -42,6 +45,7 @@ export function validateEventInput(raw: unknown): ValidationResult {
 
   const title = typeof r.title === 'string' ? r.title.trim() : '';
   if (!title) return { ok: false, error: 'Title is required' };
+  if (title.length > TITLE_MAX) return { ok: false, error: `Title must be ${TITLE_MAX} characters or fewer` };
 
   if (!isValidDate(r.date)) return { ok: false, error: 'Invalid date (expected YYYY-MM-DD)' };
 
@@ -57,6 +61,7 @@ export function validateEventInput(raw: unknown): ValidationResult {
   if (r.description !== undefined && r.description !== null) {
     if (typeof r.description !== 'string') return { ok: false, error: 'Invalid description' };
     const trimmed = r.description.trim();
+    if (trimmed.length > DESCRIPTION_MAX) return { ok: false, error: `Description must be ${DESCRIPTION_MAX} characters or fewer` };
     description = trimmed === '' ? null : trimmed;
   }
 

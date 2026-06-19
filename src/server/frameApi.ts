@@ -6,6 +6,8 @@ import { createCalendarStore } from './calendarDb';
 import { createEventStore } from './eventStore';
 import { createEventApi } from './eventApi';
 import { createDeviceApi } from './deviceApi';
+import { frameUrl } from './lanHost';
+import { parseEnvInt } from './envUtils';
 // Relative (not '@/') so server modules resolve outside Vite's alias — they're
 // bundled into vite.config and run under tsx, neither of which applies the alias.
 import { VERSION } from '../version';
@@ -30,7 +32,10 @@ export function createFrameApi(opts: FrameApiOptions) {
   const device = createDeviceApi({
     imageApi: image,
     eventStore,
-    qrPath: path.join(projectRoot, 'public', 'frame-qr.png'),
+    qrUrl: frameUrl(
+      process.env.FRAME_LAN_HOST ?? 'localhost',
+      parseEnvInt(process.env.PORT, 'PORT', 7375),
+    ),
     defaultW: opts.defaultW,
     defaultH: opts.defaultH,
     defaultContrast: opts.defaultContrast,

@@ -1,12 +1,19 @@
 import sharp from 'sharp';
+import QRCode from 'qrcode';
 import { processForEink } from './image/process';
 
-// Returns the QR code as a dithered 1-bit PNG at its natural square size.
-export async function renderQrImage(qrPath: string): Promise<Buffer> {
-  const meta = await sharp(qrPath).metadata();
-  const size = meta.width ?? 720;
-  const png = await sharp(qrPath).resize(size, size).png().toBuffer();
-  return processForEink(png, { width: size, height: size, contrast: 1.0 });
+// Generates a 1-bit PNG of the QR code at exactly 4px per module.
+// Uses the same params as gen-qr.ts so it matches the printed asset.
+export async function renderQrImage(url: string, invert = false): Promise<Buffer> {
+  return QRCode.toBuffer(url, {
+    type: 'png',
+    scale: 4,
+    margin: 2,
+    errorCorrectionLevel: 'M',
+    color: invert
+      ? { dark: '#ffffff', light: '#000000' }
+      : { dark: '#000000', light: '#ffffff' },
+  });
 }
 
 const MARGIN = 40;

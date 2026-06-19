@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { SegmentedToggle } from '@/components/SegmentedToggle';
 import { cn } from '@/lib/utils';
 import type { CalendarEvent, EventInput, Repeat } from '@/types/event';
+import { TITLE_MAX, DESCRIPTION_MAX } from '@/lib/event';
 import { todayLocal } from './format';
 
 export type EventTarget =
@@ -104,7 +105,8 @@ function EventForm({ target, onClose, onChanged }: { target: EventTarget; onClos
       <div className="flex flex-col gap-4">
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-semibold text-foreground">{t('calendar.fieldTitle')}</span>
-          <input className={FIELD} value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('calendar.titlePlaceholder')} autoFocus />
+          <input className={FIELD} value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('calendar.titlePlaceholder')} maxLength={TITLE_MAX} autoFocus />
+          <span className={cn('text-xs text-right', title.length >= TITLE_MAX ? 'text-destructive' : 'text-muted-foreground')}>{title.length}/{TITLE_MAX}</span>
         </label>
 
         <div className="flex gap-3">
@@ -144,7 +146,8 @@ function EventForm({ target, onClose, onChanged }: { target: EventTarget; onClos
 
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-semibold text-foreground">{t('calendar.fieldDescription')}</span>
-          <textarea className={cn(FIELD, 'min-h-[80px] resize-y')} value={description} onChange={(e) => setDescription(e.target.value)} />
+          <textarea className={cn(FIELD, 'min-h-[80px] resize-y')} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={DESCRIPTION_MAX} />
+          <span className={cn('text-xs text-right', description.length >= DESCRIPTION_MAX ? 'text-destructive' : 'text-muted-foreground')}>{description.length}/{DESCRIPTION_MAX}</span>
         </label>
       </div>
 

@@ -44,14 +44,16 @@ describe('renderEventsImage', () => {
 
 describe('renderQrImage', () => {
   it('returns a non-empty PNG buffer', async () => {
-    const buf = await renderQrImage(qrPath);
+    const buf = await renderQrImage('http://192.168.0.4:7375');
     expect(buf).toBeInstanceOf(Buffer);
     expect(buf.length).toBeGreaterThan(0);
   });
 
-  it('output is square (natural QR dimensions)', async () => {
-    const buf = await renderQrImage(qrPath);
+  it('output is square and size is a multiple of 4px per module', async () => {
+    const buf = await renderQrImage('http://192.168.0.4:7375');
     const meta = await sharp(buf).metadata();
     expect(meta.width).toBe(meta.height);
+    // scale=4, margin=2 → total modules = QR modules + 2*2; each module = 4px
+    expect(meta.width! % 4).toBe(0);
   });
 });
