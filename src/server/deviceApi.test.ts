@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -27,7 +27,7 @@ function makeApi(tmpDir: string) {
     api: createDeviceApi({
       imageApi: stubImageApi(),
       eventStore,
-      qrPath: path.join(tmpDir, 'qr.png'),
+      qrUrl: 'http://localhost:7375',
       defaultW: 800,
       defaultH: 480,
       defaultContrast: 1.2,
@@ -72,75 +72,104 @@ let tmpDir: string;
 beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'device-api-test-')); });
 afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
 
-describe('deviceApi frame dispatch', () => {
-  it('returns 404 when no images and no events (photo path)', async () => {
-    const { api } = makeApi(tmpDir);
-    const res = fakeRes();
-    await api.frame(fakeReq('/api/device/frame?chance=0'), res as unknown as ServerResponse);
-    expect(res.statusCode).toBe(404);
-  });
-
-  it('returns 404 when events exist but chance=0 (always photo path)', async () => {
-    const { api, eventStore } = makeApi(tmpDir);
-    eventStore.add({ title: 'Martha', date: todayIso(), time: null, repeat: 'none', description: null });
-    const res = fakeRes();
-    await api.frame(fakeReq('/api/device/frame?chance=0'), res as unknown as ServerResponse);
-    expect(res.statusCode).toBe(404);
-  });
-
-  it('returns 200 PNG when events exist and chance=100', async () => {
-    const { api, eventStore } = makeApi(tmpDir);
-    eventStore.add({ title: 'Martha', date: todayIso(), time: null, repeat: 'none', description: null });
-    // qrPath is tmpDir/qr.png — not created here; renderEventsImage will throw → falls back to photo
-    // To test the events path, create a stub QR file
-    const qrFile = path.join(tmpDir, 'qr.png');
-    const { default: sharp } = await import('sharp');
-    await sharp({
-      create: { width: 64, height: 64, channels: 3, background: { r: 0, g: 0, b: 0 } },
-    }).png().toFile(qrFile);
-
-    const res = fakeRes();
-    await api.frame(fakeReq('/api/device/frame?chance=100&w=200&h=100'), res as unknown as ServerResponse);
-    expect(res.statusCode).toBe(200);
-    expect(res.body.slice(1, 4)).toBe('PNG');
-  });
-});
-
 describe('deviceApi events', () => {
-  it('formats today event with ★ prefix', () => {
+  it('returns today event with label "Dziś" (default pl)', () => {
     const { api, eventStore } = makeApi(tmpDir);
     eventStore.add({ title: 'Martha', date: todayIso(), time: null, repeat: 'none', description: null });
     const res = fakeRes();
     api.events(fakeReq('/api/device/events?days=7'), res as unknown as ServerResponse);
-    expect(res.body).toMatch(/^★ Martha — dziś/);
     expect(res.statusCode).toBe(200);
+    const data = JSON.parse(res.body) as { title: string; date: string; today: boolean; label: string }[];
+    expect(data[0]?.today).toBe(true);
+    expect(data[0]?.label).toBe('Dzisiaj');
   });
 
-  it('formats upcoming event with • prefix and Polish date', () => {
+  it('returns today event with label "Today" (lang=en)', () => {
     const { api, eventStore } = makeApi(tmpDir);
-    eventStore.add({ title: 'Rocznica', date: futureDateIso(3), time: null, repeat: 'none', description: null });
+    eventStore.add({ title: 'Martha', date: todayIso(), time: null, repeat: 'none', description: null });
+    const res = fakeRes();
+    api.events(fakeReq('/api/device/events?days=7&lang=en'), res as unknown as ServerResponse);
+    const data = JSON.parse(res.body) as { label: string }[];
+    expect(data[0]?.label).toBe('Today');
+  });
+
+  it('returns tomorrow event with label "Jutro"', () => {
+    const { api, eventStore } = makeApi(tmpDir);
+    eventStore.add({ title: 'Rocznica', date: futureDateIso(1), time: null, repeat: 'none', description: null });
     const res = fakeRes();
     api.events(fakeReq('/api/device/events?days=7'), res as unknown as ServerResponse);
-    expect(res.body).toMatch(/^• Rocznica —/);
+    const data = JSON.parse(res.body) as { label: string }[];
+    expect(data[0]?.label).toMatch(/^Jutro$/i);
   });
 
-  it('returns multiple events, one per line', () => {
+  it('returns tomorrow event with label "Tomorrow" (lang=en)', () => {
+    const { api, eventStore } = makeApi(tmpDir);
+    eventStore.add({ title: 'Rocznica', date: futureDateIso(1), time: null, repeat: 'none', description: null });
+    const res = fakeRes();
+    api.events(fakeReq('/api/device/events?days=7&lang=en'), res as unknown as ServerResponse);
+    const data = JSON.parse(res.body) as { label: string }[];
+    expect(data[0]?.label).toBe('Tomorrow');
+  });
+
+  it('returns upcoming event with Polish weekday name', () => {
+    const { api, eventStore } = makeApi(tmpDir);
+    const future = futureDateIso(3);
+    eventStore.add({ title: 'Rocznica', date: future, time: null, repeat: 'none', description: null });
+    const res = fakeRes();
+    api.events(fakeReq('/api/device/events?days=7'), res as unknown as ServerResponse);
+    const data = JSON.parse(res.body) as { title: string; date: string; today: boolean; label: string }[];
+    expect(data[0]?.today).toBe(false);
+    expect(data[0]?.date).toBe(future);
+    const polishDays = ['niedziela', 'poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota'];
+    expect(polishDays).toContain(data[0]?.label?.toLowerCase());
+  });
+
+  it('returns multiple events in order', () => {
     const { api, eventStore } = makeApi(tmpDir);
     eventStore.add({ title: 'First', date: futureDateIso(1), time: null, repeat: 'none', description: null });
     eventStore.add({ title: 'Second', date: futureDateIso(2), time: null, repeat: 'none', description: null });
     const res = fakeRes();
     api.events(fakeReq('/api/device/events?days=7'), res as unknown as ServerResponse);
-    const lines = res.body.split('\n');
-    expect(lines.length).toBe(2);
-    expect(lines[0]).toMatch(/First/);
-    expect(lines[1]).toMatch(/Second/);
+    const data = JSON.parse(res.body) as { title: string }[];
+    expect(data).toHaveLength(2);
+    expect(data[0]?.title).toBe('First');
+    expect(data[1]?.title).toBe('Second');
   });
 
-  it('returns empty body when no events', () => {
+  it('returns empty array when no events', () => {
     const { api } = makeApi(tmpDir);
     const res = fakeRes();
     api.events(fakeReq('/api/device/events?days=7'), res as unknown as ServerResponse);
-    expect(res.body).toBe('');
     expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual([]);
+  });
+
+  describe('time-of-day cutoff (clock fixed at 12:00 local)', () => {
+    beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(2026, 5, 19, 12, 0, 0)); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it("filters today's timed events whose time has passed; keeps upcoming, exact-now, and all-day", () => {
+      const { api, eventStore } = makeApi(tmpDir);
+      eventStore.add({ title: 'Past', date: todayIso(), time: '09:00', repeat: 'none', description: null });
+      eventStore.add({ title: 'Now', date: todayIso(), time: '12:00', repeat: 'none', description: null });
+      eventStore.add({ title: 'Later', date: todayIso(), time: '15:00', repeat: 'none', description: null });
+      eventStore.add({ title: 'AllDay', date: todayIso(), time: null, repeat: 'none', description: null });
+      const res = fakeRes();
+      api.events(fakeReq('/api/device/events?days=7'), res as unknown as ServerResponse);
+      const titles = (JSON.parse(res.body) as { title: string }[]).map(e => e.title);
+      expect(titles).not.toContain('Past');
+      expect(titles).toContain('Now');
+      expect(titles).toContain('Later');
+      expect(titles).toContain('AllDay');
+    });
+
+    it('keeps future-day timed events even when their time is earlier than now', () => {
+      const { api, eventStore } = makeApi(tmpDir);
+      eventStore.add({ title: 'EarlyTomorrow', date: futureDateIso(1), time: '06:00', repeat: 'none', description: null });
+      const res = fakeRes();
+      api.events(fakeReq('/api/device/events?days=7'), res as unknown as ServerResponse);
+      const titles = (JSON.parse(res.body) as { title: string }[]).map(e => e.title);
+      expect(titles).toContain('EarlyTomorrow');
+    });
   });
 });
