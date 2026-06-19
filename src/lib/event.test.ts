@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isValidDate, isValidTime, validateEventInput } from './event';
+import { isValidDate, isValidTime, validateEventInput, TITLE_MAX, DESCRIPTION_MAX } from './event';
 
 describe('isValidDate', () => {
   it('accepts real calendar dates', () => {
@@ -50,5 +50,32 @@ describe('validateEventInput', () => {
     expect(validateEventInput({ title: 'X', date: '2026-06-20', repeat: 'none', time: '99:99' }).ok).toBe(false);
     expect(validateEventInput({ title: 'X', date: '2026-06-20', repeat: 'weekly' }).ok).toBe(false);
     expect(validateEventInput(null).ok).toBe(false);
+  });
+
+  it('accepts a title at exactly TITLE_MAX, rejects one over', () => {
+    const base = { date: '2026-06-20', repeat: 'none' as const };
+    expect(validateEventInput({ ...base, title: 'a'.repeat(TITLE_MAX) }).ok).toBe(true);
+    const over = validateEventInput({ ...base, title: 'a'.repeat(TITLE_MAX + 1) });
+    expect(over.ok).toBe(false);
+    expect(over.ok === false && over.error).toMatch(/Title must be/);
+  });
+
+  it('accepts a description at exactly DESCRIPTION_MAX, rejects one over', () => {
+    const base = { title: 'X', date: '2026-06-20', repeat: 'none' as const };
+    expect(validateEventInput({ ...base, description: 'd'.repeat(DESCRIPTION_MAX) }).ok).toBe(true);
+    const over = validateEventInput({ ...base, description: 'd'.repeat(DESCRIPTION_MAX + 1) });
+    expect(over.ok).toBe(false);
+    expect(over.ok === false && over.error).toMatch(/Description must be/);
+  });
+
+  it('trims before the length check (trailing whitespace past the limit is ok)', () => {
+    const title = 'a'.repeat(TITLE_MAX) + '   ';
+    const description = 'd'.repeat(DESCRIPTION_MAX) + '   ';
+    const r = validateEventInput({ title, date: '2026-06-20', repeat: 'none', description });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.title).toHaveLength(TITLE_MAX);
+      expect(r.value.description).toHaveLength(DESCRIPTION_MAX);
+    }
   });
 });
