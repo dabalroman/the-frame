@@ -40,8 +40,8 @@ to fuss over.**
 ## 🌙 A gentle daily rhythm
 
 The e-ink display refreshes once an hour through the day, then rests quietly overnight — its
-last change is at **23:00** and it wakes again at **07:00**. No glowing screen at 3am, and a
-single charge stretches as far as it can.
+last change is at **23:00** and it wakes again at **07:00**. No needless wake-ups while you
+sleep, so a single charge stretches as far as it can.
 
 ## 🚀 Getting started
 
