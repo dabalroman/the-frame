@@ -37,6 +37,21 @@ to fuss over.**
 - 🌙 **Sips power** — the e-ink display refreshes hourly by day and rests overnight, so a charge lasts and lasts.
 - 🌍 **Speaks your language** — Polish-first, English on tap.
 
+## 🧩 What's inside
+
+Three parts working together over your LAN — no cloud, no companion app:
+
+- **📱 Web app** — a mobile-first **React + TypeScript** UI (Tailwind + shadcn, a warm
+  "sunlit-linen" theme). Upload and crop photos, manage the calendar — all from a phone.
+- **🗃 Server & storage** — a small **Express** API (run via `tsx`, no build step) backed by a
+  **SQLite** calendar and an on-disk image store. A **Floyd–Steinberg dithering** pipeline
+  renders photos and event posters to **1-bit PNGs** sized for the panel, with perceptual-hash
+  de-duplication on upload.
+- **🔌 Firmware** — **ESPHome** firmware (`esphome/`) for a battery-powered **Waveshare 7.5"
+  e-ink** panel on a **XIAO ESP32-S3**. It deep-sleeps between NTP-aligned hourly wakes, pulls a
+  server-rendered photo or event screen, and exposes three buttons (refresh · rotate H↔V ·
+  Wi-Fi + QR). The device stays dumb; the server decides what to show.
+
 ## 🌙 A gentle daily rhythm
 
 The e-ink display refreshes once an hour through the day, then rests quietly overnight — its
