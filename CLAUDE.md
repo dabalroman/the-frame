@@ -252,21 +252,27 @@ Then flash via the ESPHome dashboard or `esphome run`.
 | KEY3 (D4) | GPIO5 | WiFi SSID + signal bars + QR code; stays awake (OTA available); any button press → refresh normal content → sleep |
 | KEY4 (EN) | — | Hardware RESET only — not programmable |
 
-**Deep sleep:** timer (60 min) + EXT1 ANY_LOW (GPIO2∥3∥5). e-ink retains image during sleep.
+**Deep sleep:** EXT1 ANY_LOW (GPIO2∥3∥5) + NTP-aligned timer (see below). e-ink retains image during sleep.
 
-**Boot flow:** fetch `/api/device/events?days=N` → non-empty + `esp_random() % 100 < events_chance` → show event poster; otherwise fetch `/api/device/photo` → display → sleep.
+**NTP-aligned wakes + overnight gap (#217):** the device has an `sntp` `time:` component (`sntp_time`, tz `Europe/Warsaw`). Instead of a fixed 60-min timer, the `enter_sleep` **script** computes the duration to the **next top-of-hour** (sleep to `:00`), so wakes land on 07:00, 08:00, … 23:00. If the next hour would be `< resume_hour` (i.e. 00:00–06:00), it targets `resume_hour` (07:00) instead — so **23:00 is the last redraw and the device does one ~8 h sleep straight to 07:00** (no overnight wakes). `enter_sleep` uses `deep_sleep.enter` with a templated `sleep_duration` lambda; the `deep_sleep:` component's `${deep_sleep_minutes}min` is now only a **fallback** used when the clock isn't synced yet. Both end-of-cycle sleeps (`online_image.on_download_finished`, `render_events`) call `script.execute: enter_sleep` instead of `deep_sleep.enter`.
+  - **`auto_wake` global** = `cause != ESP_SLEEP_WAKEUP_EXT1` (timer/cold = automatic, button = manual). A **pre-WiFi guard** in `on_boot` (right after `safe_mode.mark_successful`, which was moved up so early sleeps don't trip the safe-mode reboot counter): if `auto_wake && sntp_time.now().is_valid() && hour < resume_hour`, it `script.execute: enter_sleep` immediately — catches an RTC-drift undershoot (woke ~06:50) without spending WiFi/fetch/redraw. Button (EXT1) wakes set `auto_wake=false` → guard skipped → buttons always work overnight. An unsynced clock fails open (normal boot).
+  - **Resume precision is ±~30 min** (RTC drift over the long sleep is uncorrected by design — no overnight re-sync). NTP re-syncs on every daytime wake's WiFi connect, so the clock is fresh whenever the gap edges are evaluated.
+
+**Boot flow:** (auto wake before `resume_hour` → guard sleeps back to 07:00) → fetch `/api/device/events?days=N` → non-empty + `esp_random() % 100 < events_chance` → show event poster; otherwise fetch `/api/device/photo` → display → `enter_sleep` (NTP-aligned).
 
 **Key substitutions in `esphome/the-frame-display.yaml`:**
 | Substitution | Default | Notes |
 |---|---|---|
 | `frame_url` | `http://192.168.0.4:7375` | Update before flash |
-| `deep_sleep_minutes` | `60` | Timer wakeup interval |
+| `deep_sleep_minutes` | `60` | **Fallback** sleep only (used when the clock isn't synced); normal cadence is NTP-aligned via `enter_sleep` |
+| `resume_hour` | `7` | First redraw hour after the overnight gap; automatic wakes for hours `< this` are pushed to it (#217) |
+| `quiet_timezone` | `Europe/Warsaw` | Timezone for the `sntp` `time:` component (DST-correct) (#217) |
 | `events_days` | `3` | Days ahead to fetch events |
 | `events_chance` | `30` | 0–100 % chance of showing events when events exist (device-side randomness) |
 
 **QR asset:** `public/frame-qr.png` — regenerate with `npm run qr` when the LAN IP changes. Served as-is (natural square size) by `/api/device/qr`; device renders it on the right half of the WiFi+QR screen.
 
-No HA API component (removes keep-alive overhead vs. the original `trmnl.yaml`).
+No HA API component (removes keep-alive overhead vs. the original `trmnl.yaml`). Time comes from **SNTP**, not HA — so the "no HA API" stance still holds even with the `time:` component (#217).
 
 ## Remaining work
 

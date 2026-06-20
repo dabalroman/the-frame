@@ -9,6 +9,8 @@ substitutions:
   key1_gpio: "2"          # D1 — refresh (current orientation)
   key2_gpio: "3"          # D2 — toggle orientation H↔V, then refresh
   key3_gpio: "5"          # D4 — WiFi info + QR code screen
+  resume_hour: "7"        # first redraw hour after the overnight gap; auto wakes for hours < this are pushed here
+  quiet_timezone: "Europe/Warsaw"
 
 esphome:
   name: ${device_name}
@@ -19,6 +21,7 @@ esphome:
       - lambda: |-
           auto cause = esp_sleep_get_wakeup_cause();
           id(action_mode) = 0;
+          id(auto_wake) = (cause != ESP_SLEEP_WAKEUP_EXT1);  // timer/cold = automatic; EXT1 = button
 
           if (cause == ESP_SLEEP_WAKEUP_EXT1) {
             uint64_t mask = esp_sleep_get_ext1_wakeup_status();
@@ -39,12 +42,24 @@ esphome:
           // Register EXT1 button wakeup. deep_sleep component handles timer wakeup via sleep_duration.
           uint64_t btn_mask = (1ULL << ${key1_gpio}) | (1ULL << ${key2_gpio}) | (1ULL << ${key3_gpio});
           esp_sleep_enable_ext1_wakeup(btn_mask, ESP_EXT1_WAKEUP_ANY_LOW);
+      - safe_mode.mark_successful
+      # Pre-WiFi quiet-gap guard: if an automatic wake lands before resume_hour (e.g. RTC drift
+      # made the overnight sleep wake at 06:50), go straight back to sleep until resume_hour
+      # without spending WiFi/fetch/redraw. Buttons (auto_wake=false) and an unsynced clock skip this.
+      - if:
+          condition:
+            lambda: |-
+              if (!id(auto_wake)) return false;
+              auto now = id(sntp_time).now();
+              return now.is_valid() && now.hour < ${resume_hour};
+          then:
+            - logger.log: "quiet gap: woke before resume_hour — sleeping until resume"
+            - script.execute: enter_sleep
       - logger.log: "boot: waiting for WiFi..."
       - wait_until:
           condition:
             wifi.connected:
           timeout: 30s
-      - safe_mode.mark_successful
       - output.turn_on: adc_en
       - delay: 10ms
       - component.update: battery_voltage
@@ -65,7 +80,15 @@ esp32:
 
 deep_sleep:
   id: the_frame_sleep
-  sleep_duration: ${deep_sleep_minutes}min
+  sleep_duration: ${deep_sleep_minutes}min   # fallback only; enter_sleep overrides per-sleep
+
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: ${quiet_timezone}
+    servers:
+      - pool.ntp.org
+      - time.google.com
 
 psram:
   mode: octal
@@ -249,7 +272,7 @@ online_image:
           condition:
             lambda: "return id(action_mode) == 0;"
           then:
-            - deep_sleep.enter: the_frame_sleep
+            - script.execute: enter_sleep
 
 globals:
   - id: frame_orientation
@@ -261,6 +284,11 @@ globals:
     type: int
     restore_value: false
     initial_value: '0'       # 0 = refresh, 1 = WiFi+QR
+
+  - id: auto_wake
+    type: bool
+    restore_value: false
+    initial_value: 'true'    # true = timer/cold-boot wake; false = EXT1 button wake
 
   - id: show_events
     type: bool
@@ -357,6 +385,31 @@ binary_sensor:
       - script.execute: show_wifi_info
 
 script:
+  # ── enter_sleep ───────────────────────────────────────────────────────────────
+  # Deep-sleeps until the next top-of-hour (NTP-aligned), so wakes land on :00.
+  # If that next hour falls inside the overnight gap (00:00–06:00, i.e. < resume_hour),
+  # it targets resume_hour (07:00) instead — so 23:00 is the last redraw and the device
+  # does one long sleep straight to 07:00. Falls back to a plain 60 min if the clock
+  # isn't synced yet (first boot before SNTP). deep_sleep.enter respects deep_sleep.prevent.
+  - id: enter_sleep
+    then:
+      - deep_sleep.enter:
+          id: the_frame_sleep
+          sleep_duration: !lambda |-
+            auto now = id(sntp_time).now();
+            if (!now.is_valid()) return (uint32_t) 3600000;  // 60 min fallback
+            int now_total = now.hour * 3600 + now.minute * 60 + now.second;
+            int wake_hour = (now.hour + 1) % 24;             // candidate: next top-of-hour
+            uint32_t secs;
+            if (wake_hour < ${resume_hour}) {                // 00:00–06:00 → skip the gap
+              int target = ${resume_hour} * 3600;            // 07:00
+              secs = (now_total >= target) ? (86400 - now_total + target)
+                                           : (target - now_total);
+            } else {
+              secs = 3600 - (now.minute * 60 + now.second);  // to next :00
+            }
+            return secs * 1000UL;
+
   # ── show_wifi_info ────────────────────────────────────────────────────────────
   # Renders WiFi status + QR code. Stays awake, refreshes RSSI every 10s.
   # Any button press sets exit_wifi_qr=true, breaking the loop.
@@ -456,7 +509,7 @@ script:
           condition:
             lambda: "return id(action_mode) == 0;"
           then:
-            - deep_sleep.enter: the_frame_sleep
+            - script.execute: enter_sleep
 
   # ── fetch_photo ───────────────────────────────────────────────────────────────
   # Builds the photo URL for the current orientation and triggers download.
