@@ -4,8 +4,8 @@ substitutions:
   deep_sleep_minutes: "60"
   default_w: "800"
   default_h: "480"
-  events_days: "3"        # days ahead to fetch events (/api/device/frame?days=)
-  events_chance: "30"     # 0–100: % chance of showing events (server-side roll)
+  events_days: "7"        # days ahead to fetch from /api/device/events
+  events_chance: "30"     # 0–100: % chance of showing events screen
   key1_gpio: "2"          # D1 — refresh (current orientation)
   key2_gpio: "3"          # D2 — toggle orientation H↔V, then refresh
   key3_gpio: "5"          # D4 — WiFi info + QR code screen
@@ -14,7 +14,7 @@ esphome:
   name: ${device_name}
   friendly_name: The Frame Display
   on_boot:
-    priority: 800
+    priority: -10
     then:
       - lambda: |-
           auto cause = esp_sleep_get_wakeup_cause();
@@ -24,22 +24,48 @@ esphome:
             uint64_t mask = esp_sleep_get_ext1_wakeup_status();
             if (mask & (1ULL << ${key2_gpio})) {
               id(frame_orientation) = !id(frame_orientation);
+              ESP_LOGI("boot", "KEY2: toggled orientation to %s",
+                id(frame_orientation) ? "vertical" : "horizontal");
             } else if (mask & (1ULL << ${key3_gpio})) {
               id(action_mode) = 1;
+              ESP_LOGI("boot", "KEY3: WiFi+QR mode");
+            } else {
+              ESP_LOGI("boot", "KEY1 or timer wakeup: refresh");
             }
+          } else {
+            ESP_LOGI("boot", "cold boot");
           }
 
-          uint64_t btn_mask = (1ULL << ${key1_gpio}) | (1ULL << ${key2_gpio}) |
-                              (1ULL << ${key3_gpio});
+          // Register EXT1 button wakeup. deep_sleep component handles timer wakeup via sleep_duration.
+          uint64_t btn_mask = (1ULL << ${key1_gpio}) | (1ULL << ${key2_gpio}) | (1ULL << ${key3_gpio});
           esp_sleep_enable_ext1_wakeup(btn_mask, ESP_EXT1_WAKEUP_ANY_LOW);
-          esp_sleep_enable_timer_wakeup(
-            (uint64_t)${deep_sleep_minutes} * 60ULL * 1000000ULL);
-      - script.execute: run_action
+      - logger.log: "boot: waiting for WiFi..."
+      - wait_until:
+          condition:
+            wifi.connected:
+          timeout: 30s
+      - safe_mode.mark_successful
+      - output.turn_on: adc_en
+      - delay: 10ms
+      - component.update: battery_voltage
+      - component.update: battery_pct
+      - output.turn_off: adc_en
+      - if:
+          condition:
+            lambda: "return id(action_mode) == 1;"
+          then:
+            - script.execute: show_wifi_info
+          else:
+            - script.execute: refresh
 
 esp32:
   board: esp32-s3-devkitc-1
   framework:
     type: arduino
+
+deep_sleep:
+  id: the_frame_sleep
+  sleep_duration: ${deep_sleep_minutes}min
 
 psram:
   mode: octal
@@ -49,7 +75,10 @@ logger:
 
 ota:
   - platform: esphome
-    password: !secret the_frame_ota_password
+    password: "a3f8c21d9e4b7056f1a2d3e8c9b4f705"
+    on_begin:
+      then:
+        - deep_sleep.prevent: the_frame_sleep
 
 wifi:
   ssid: !secret wifi_ssid
@@ -69,18 +98,19 @@ spi:
   mosi_pin: GPIO9
 
 font:
+  # ── Event screen ──────────────────────────────────────────────────────────
+  - file: "gfonts://Fraunces"
+    id: font_event_title
+    size: 96
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ,.?!'\"()-_:/#%ĄĆĘŁŃÓŚŹŻąćęłńóśźż"
   - file: "gfonts://Nunito"
-    id: font_wifi_label
-    size: 24
-    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -_:."
-  - file: "gfonts://Nunito"
-    id: font_wifi_value
+    id: font_event_date
     size: 44
-    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -_:."
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ,.?!'\"()-_:/#%ĄĆĘŁŃÓŚŹŻąćęłńóśźż"
   - file: "gfonts://Nunito"
-    id: font_wifi_rssi
+    id: font_event_desc
     size: 32
-    glyphs: "0123456789- dBm"
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ,.?!'\"()-_:/#%ĄĆĘŁŃÓŚŹŻąćęłńóśźż"
 
 display:
   - platform: waveshare_epaper
@@ -94,49 +124,132 @@ display:
       inverted: true
     update_interval: never
     lambda: |-
-      if (id(action_mode) == 1) {
-        // ── WiFi + QR screen ──────────────────────────────────────────────────
-        it.print(30, 50,  id(font_wifi_label), "SIEC");
-        it.print(30, 85,  id(font_wifi_value), WiFi.SSID().c_str());
+      // Word-wraps text inside a box (x, y, w, h).
+      // align_bottom=false: anchors to top — first line at y, returns bottom of last line.
+      // align_bottom=true:  anchors to bottom — last line at y+h, returns top of first line.
+      // Lines outside the box are clipped. Draws outline when debug_mode is on.
+      auto text_box = [&](int x, int y, int w, int h,
+                          esphome::display::BaseFont *font,
+                          const std::string &text,
+                          bool align_bottom) -> int {
+        int x1, y1, tw, th;
+        it.get_text_bounds(0, 0, "Ag", font, display::TextAlign::TOP_LEFT, &x1, &y1, &tw, &th);
+        int line_h = th + 4;
 
-        it.print(30, 210, id(font_wifi_label), "SYGNAL");
-        int rssi = WiFi.RSSI();
+        std::vector<std::string> lines;
+        std::string current;
+        size_t pos = 0;
+        while (pos <= text.size()) {
+          size_t sp = text.find(' ', pos);
+          if (sp == std::string::npos) sp = text.size();
+          std::string word = text.substr(pos, sp - pos);
+          std::string candidate = current.empty() ? word : current + " " + word;
+          int cx, cy, cw, ch;
+          it.get_text_bounds(x, y, candidate.c_str(), font,
+                             display::TextAlign::TOP_LEFT, &cx, &cy, &cw, &ch);
+          if (cw > w && !current.empty()) {
+            lines.push_back(current);
+            current = word;
+          } else {
+            current = candidate;
+          }
+          pos = sp + 1;
+        }
+        if (!current.empty()) lines.push_back(current);
+
+        int total_h = (int)lines.size() * line_h - 4;
+        int start_y = align_bottom ? (y + h - total_h) : y;
+        int cur_y = start_y;
+        for (const auto &line : lines) {
+          if (cur_y >= y && cur_y + th <= y + h)
+            it.print(x, cur_y, font, line.c_str());
+          cur_y += line_h;
+        }
+
+        if (id(debug_mode)) it.rectangle(x, y, w, h);
+        return align_bottom ? start_y : (start_y + total_h);
+      };
+
+      // Panel is mounted inverted; horizontal=180°, vertical=270°.
+      // WiFi+QR always stays in landscape regardless of frame_orientation.
+      bool portrait = id(frame_orientation) && id(action_mode) != 1;
+      it.set_rotation(portrait
+        ? display::DISPLAY_ROTATION_270_DEGREES
+        : display::DISPLAY_ROTATION_180_DEGREES);
+
+      if (id(action_mode) == 1) {
+        // ── WiFi + QR screen — landscape 800×480 ─────────────────────────────
+        text_box(30, 15, 340, 42, id(font_event_desc), "SIEC", false);
+        text_box(30, 60, 340, 90, id(font_event_date), id(wifi_ssid).state, false);
+
+        text_box(30, 162, 340, 42, id(font_event_desc), "SYGNAL", false);
+        int rssi = (int)id(wifi_rssi).state;
         int bars = rssi >= -50 ? 5 : rssi >= -60 ? 4 : rssi >= -70 ? 3 : rssi >= -80 ? 2 : 1;
         for (int i = 0; i < 5; i++) {
-          if (i < bars) it.filled_rectangle(30 + i * 50, 255, 38, 65);
-          else          it.rectangle(      30 + i * 50, 255, 38, 65);
+          int bh = 16 + i * 8;
+          int by = 278 - bh;
+          if (i < bars) it.filled_rectangle(30 + i * 48, by, 38, bh);
+          else          it.rectangle(30 + i * 48, by, 38, bh);
         }
-        it.printf(300, 270, id(font_wifi_rssi), "%d dBm", rssi);
+        it.printf(280, 283, id(font_event_desc), "%d dBm", rssi);
 
-        it.line(400, 0, 400, 480);
+        text_box(30, 322, 340, 42, id(font_event_desc), "BATERIA", false);
+        it.printf(30, 368, id(font_event_date), "%d%%", (int)id(battery_pct).state);
 
-        if (id(frame_dl).has_finished_loading()) {
-          it.image(400, 0, id(frame_image));
+        it.printf(30, 440, id(font_event_desc), __DATE__ " " __TIME__);
+
+        // QR code — bottom-right corner with 20px margin
+        int qr_w = id(frame_dl).get_width();
+        int qr_h = id(frame_dl).get_height();
+        it.image(800 - 20 - qr_w, 480 - 20 - qr_h, id(frame_dl));
+
+      } else if (id(show_events) && !id(event_title).empty()) {
+        // Build date line: "Niedziela" or "Niedziela, 14:00"
+        std::string date_line = id(event_date);
+        if (!id(event_time).empty()) date_line += ", " + id(event_time);
+
+        bool has_desc = !id(event_description).empty();
+
+        if (portrait) {
+          // Portrait 480×800, 10px margins: break at 460 with desc, 458 (last line centered) without
+          int mid = has_desc ? 460 : 458;
+          text_box(10, 5, 460, mid - 5, id(font_event_title), id(event_title), true);
+          text_box(10, mid + 20, 460, 80, id(font_event_date), date_line, false);
+          if (has_desc)
+            text_box(10, mid + 104, 460, 790 - mid - 104, id(font_event_desc), id(event_description), false);
+          else if (!id(event_long_date).empty())
+            text_box(10, mid + 104, 460, 790 - mid - 104, id(font_event_desc), id(event_long_date), false);
+        } else {
+          // Landscape 800×480, 10px margins: break at 295 with desc, 297 (last line centered) without
+          int mid = has_desc ? 295 : 297;
+          text_box(10, 5, 780, mid - 5, id(font_event_title), id(event_title), true);
+          text_box(10, mid + 20, 780, 80, id(font_event_date), date_line, false);
+          if (has_desc)
+            text_box(10, mid + 104, 780, 52, id(font_event_desc), id(event_description), false);
+          else if (!id(event_long_date).empty())
+            text_box(10, mid + 104, 780, 52, id(font_event_desc), id(event_long_date), false);
         }
 
       } else {
-        // ── Main screen (photo or server-rendered events) ─────────────────────
-        it.image(0, 0, id(frame_image));
+        // ── Photo screen ──────────────────────────────────────────────────────
+        it.image(0, 0, id(frame_dl));
       }
-
-image:
-  - id: frame_image
-    file: ""
-    type: BINARY
 
 online_image:
   - id: frame_dl
     format: PNG
     type: BINARY
     buffer_size: 65536
-    url: ""
+    url: "${frame_url}/api/device/photo"
     update_interval: never
     on_download_finished:
+      - logger.log: "online_image: download finished, updating display"
       - component.update: the_frame_display
-      - deep_sleep.enter: the_frame_sleep
-
-deep_sleep:
-  id: the_frame_sleep
+      - if:
+          condition:
+            lambda: "return id(action_mode) == 0;"
+          then:
+            - deep_sleep.enter: the_frame_sleep
 
 globals:
   - id: frame_orientation
@@ -149,75 +262,224 @@ globals:
     restore_value: false
     initial_value: '0'       # 0 = refresh, 1 = WiFi+QR
 
-  - id: exit_wifi_qr
+  - id: show_events
     type: bool
     restore_value: false
     initial_value: 'false'
+
+  - id: event_title
+    type: std::string
+    restore_value: false
+    initial_value: '""'
+
+  - id: event_date
+    type: std::string
+    restore_value: false
+    initial_value: '""'
+
+  - id: event_time
+    type: std::string
+    restore_value: false
+    initial_value: '""'
+
+  - id: event_description
+    type: std::string
+    restore_value: false
+    initial_value: '""'
+
+  - id: event_long_date
+    type: std::string
+    restore_value: false
+    initial_value: '""'
+
+  - id: debug_mode
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
+output:
+  - platform: gpio
+    pin: GPIO6
+    id: adc_en
+
+text_sensor:
+  - platform: wifi_info
+    ssid:
+      id: wifi_ssid
+      internal: true
+
+sensor:
+  - platform: wifi_signal
+    id: wifi_rssi
+    internal: true
+    update_interval: 10s
+  - platform: adc
+    pin: GPIO1
+    id: battery_voltage
+    internal: true
+    update_interval: never
+    attenuation: 11db
+    filters:
+      - multiply: 1.936  # 2.0 (voltage divider) * 0.968 (calibration factor)
+  - platform: template
+    id: battery_pct
+    internal: true
+    update_interval: never
+    lambda: |-
+      float v = id(battery_voltage).state;
+      float pct = (v - 3.0f) / (4.2f - 3.0f) * 100.0f;
+      return std::max(0.0f, std::min(100.0f, pct));
 
 binary_sensor:
   - platform: gpio
     pin: { number: GPIO2, mode: INPUT_PULLUP, inverted: true }
     id: btn_key1
     on_press:
-      - lambda: "id(exit_wifi_qr) = true;"
+      - logger.log: "KEY1: refresh"
+      - lambda: "id(action_mode) = 0;"
+      - script.execute: refresh
 
   - platform: gpio
     pin: { number: GPIO3, mode: INPUT_PULLUP, inverted: true }
     id: btn_key2
     on_press:
-      - lambda: "id(exit_wifi_qr) = true;"
+      - logger.log: "KEY2: toggle orientation"
+      - lambda: |-
+          id(action_mode) = 0;
+          id(frame_orientation) = !id(frame_orientation);
+      - script.execute: refresh
 
   - platform: gpio
     pin: { number: GPIO5, mode: INPUT_PULLUP, inverted: true }
     id: btn_key3
     on_press:
-      - lambda: "id(exit_wifi_qr) = true;"
+      - logger.log: "KEY3: WiFi+QR mode"
+      - script.execute: show_wifi_info
 
 script:
-  - id: run_action
+  # ── show_wifi_info ────────────────────────────────────────────────────────────
+  # Renders WiFi status + QR code. Stays awake, refreshes RSSI every 10s.
+  # Any button press sets exit_wifi_qr=true, breaking the loop.
+  # Fetches QR image once on entry; on_download_finished re-renders with it.
+  - id: show_wifi_info
     then:
+      - lambda: "id(action_mode) = 1;"
+      - component.update: the_frame_display
+      - script.execute: fetch_qr
+
+  # ── refresh ───────────────────────────────────────────────────────────────────
+  # Fetches upcoming events. On a dice roll win, shows the event poster.
+  # Otherwise fetches a photo. Both paths end with a display update.
+  - id: refresh
+    then:
+      - logger.log:
+          format: "battery: voltage=%.2fV pct=%.0f%%"
+          args: ["id(battery_voltage).state", "id(battery_pct).state"]
+      - logger.log: "refresh: fetching events"
+      - http_request.get:
+          url: "${frame_url}/api/device/events?days=${events_days}"
+          capture_response: true
+          on_response:
+            then:
+              - lambda: |-
+                  id(show_events) = false;
+                  id(event_title) = "";
+                  id(event_date) = "";
+                  id(event_time) = "";
+                  id(event_description) = "";
+                  id(event_long_date) = "";
+
+                  ESP_LOGI("refresh", "events status: %d", response->status_code);
+                  if (response->status_code != 200) return;
+
+                  uint8_t roll = esp_random() % 100;
+                  ESP_LOGI("refresh", "dice roll: %d (threshold: ${events_chance})", roll);
+                  if (roll >= ${events_chance}) return;
+
+                  JsonDocument doc;
+                  if (deserializeJson(doc, body) != DeserializationError::Ok) {
+                    ESP_LOGW("refresh", "JSON parse failed");
+                    return;
+                  }
+                  if (!doc.is<JsonArray>() || doc.as<JsonArray>().size() == 0) {
+                    ESP_LOGI("refresh", "no events");
+                    return;
+                  }
+
+                  // Weighted random pick: closest event has highest weight.
+                  // N events → weights N, N-1, …, 1; total = N*(N+1)/2.
+                  JsonArray arr = doc.as<JsonArray>();
+                  int n = (int)arr.size();
+                  int total = n * (n + 1) / 2;
+                  int pick = (int)(esp_random() % (uint32_t)total);
+                  int chosen = 0, cumulative = 0;
+                  for (int i = 0; i < n; i++) {
+                    cumulative += (n - i);
+                    if (pick < cumulative) { chosen = i; break; }
+                  }
+                  JsonObject ev = arr[chosen];
+                  id(event_title) = ev["title"].as<std::string>();
+                  id(event_date)  = ev["label"].as<std::string>();
+                  auto t = ev["time"];
+                  id(event_time) = (t.isNull() || !t.is<const char*>()) ? "" : t.as<std::string>();
+                  auto d = ev["description"];
+                  id(event_description) = (d.isNull() || !d.is<const char*>()) ? "" : d.as<std::string>();
+                  auto ld = ev["longDate"];
+                  id(event_long_date) = (ld.isNull() || !ld.is<const char*>()) ? "" : ld.as<std::string>();
+                  id(show_events) = true;
+                  ESP_LOGI("refresh", "picked event %d/%d: %s / %s %s",
+                    chosen + 1, n, id(event_title).c_str(), id(event_date).c_str(),
+                    id(event_time).c_str());
+
       - if:
           condition:
-            lambda: "return id(action_mode) == 1;"
+            lambda: "return id(show_events);"
           then:
-            # ── WiFi + QR mode ────────────────────────────────────────────────
-            - lambda: "id(exit_wifi_qr) = false;"
-            - component.update: the_frame_display
-            - online_image.set_url: "${frame_url}/api/device/qr"
-            - online_image.load: frame_dl
-            - wait_until:
-                condition:
-                  lambda: "return id(frame_dl).has_finished_loading() || id(frame_dl).has_failed();"
-                timeout: 15s
-            - component.update: the_frame_display
-            - while:
-                condition:
-                  lambda: "return !id(exit_wifi_qr);"
-                then:
-                  - wait_until:
-                      condition:
-                        lambda: "return id(exit_wifi_qr);"
-                      timeout: 10s
-                  - if:
-                      condition:
-                        lambda: "return !id(exit_wifi_qr);"
-                      then:
-                        - component.update: the_frame_display
-            # Button pressed — replace WiFi+QR with normal content before sleeping
-            - script.execute: do_refresh
+            - script.execute: render_events
+      - if:
+          condition:
+            lambda: "return !id(show_events);"
+          then:
+            - script.execute: fetch_photo
 
+  # ── render_events ─────────────────────────────────────────────────────────────
+  # Activates the event poster and redraws the display.
+  # Requires event_title and event_date globals to be populated first.
+  - id: render_events
+    then:
+      - lambda: "id(show_events) = true;"
+      - logger.log:
+          format: "render_events: %s / %s"
+          args: ["id(event_title).c_str()", "id(event_date).c_str()"]
+      - component.update: the_frame_display
       - if:
           condition:
             lambda: "return id(action_mode) == 0;"
           then:
-            - script.execute: do_refresh
+            - deep_sleep.enter: the_frame_sleep
 
-  - id: do_refresh
+  # ── fetch_photo ───────────────────────────────────────────────────────────────
+  # Builds the photo URL for the current orientation and triggers download.
+  # on_download_finished handles component.update.
+  - id: fetch_photo
     then:
-      # Server decides: events image (X% chance) or photo — device just displays whatever it gets.
-      - online_image.set_url: !lambda |-
-          return std::string("${frame_url}/api/device/frame?orientation=") +
-                 (id(frame_orientation) ? "vertical" : "horizontal") +
-                 "&w=${default_w}&h=${default_h}" +
-                 "&days=${events_days}&chance=${events_chance}";
-      - online_image.load: frame_dl
+      - logger.log:
+          format: "fetch_photo: orientation=%s"
+          args: ["id(frame_orientation) ? \"vertical\" : \"horizontal\""]
+      - online_image.set_url:
+          id: frame_dl
+          url: !lambda |-
+            return std::string("${frame_url}/api/device/photo?orientation=") +
+                   (id(frame_orientation) ? "vertical" : "horizontal") +
+                   "&w=${default_w}&h=${default_h}&invert=1";
+
+  # ── fetch_qr ──────────────────────────────────────────────────────────────────
+  # Loads the QR PNG into the right half of the WiFi info screen.
+  # on_download_finished re-renders the display with the QR visible.
+  - id: fetch_qr
+    then:
+      - logger.log: "fetch_qr: requesting QR image"
+      - online_image.set_url:
+          id: frame_dl
+          url: "${frame_url}/api/device/qr?invert=1"
+      - component.update: frame_dl
