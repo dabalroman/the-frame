@@ -1,59 +1,78 @@
+<div align="center">
+
+<img src="public/favicon.svg" alt="The Frame" width="72" height="72" />
+
 # The Frame
 
-> Keep your loved ones close and never miss a special day — a living picture frame you fill straight from your phone.
+**A living picture frame for the warmth of your home.**
 
-The Frame turns an ordinary wooden picture frame into the warm heart of your home. It gently
-cycles through your favourite photos and quietly remembers every birthday and anniversary, so
-you never miss the moments that matter. Adding a new memory or date couldn't be easier — scan
-the little code beside the frame and you're in, right from your phone. No apps to install,
-nothing to fuss over.
+*Fill it from your phone. Never miss a birthday. Watch your memories drift by.*
 
-## Under the hood
+<br />
 
-Mobile-first web app. Vite + React 18 + TypeScript + SCSS + Tailwind/shadcn, Express (via
-`tsx`), SQLite (calendar) + on-disk image store. Runs as a single app on **port 7375**.
+![React](https://img.shields.io/badge/React-18-51b3c9?style=flat-square&logo=react&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?style=flat-square&logo=typescript&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-646cff?style=flat-square&logo=vite&logoColor=white)
+![Tailwind](https://img.shields.io/badge/Tailwind-CSS-38bdf8?style=flat-square&logo=tailwindcss&logoColor=white)
+![Express](https://img.shields.io/badge/Express-tsx-444?style=flat-square&logo=express&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-calendar-003b57?style=flat-square&logo=sqlite&logoColor=white)
+![ESPHome](https://img.shields.io/badge/ESPHome-e--ink-000?style=flat-square&logo=esphome&logoColor=white)
 
-## Develop
+</div>
 
-```bash
-npm install          # also registers the git pre-commit hook
-npm run dev          # Vite + HMR on http://localhost:7375
-```
+---
 
-Visit `http://localhost:7375` (or `http://<lan-ip>:7375` from a phone on the same network).
+The Frame turns an ordinary wooden picture frame into the quiet heart of your home. It gently
+cycles through your favourite photos and remembers every birthday and anniversary — so you
+never miss the moments that matter. Adding a memory or a date is effortless: scan the little
+code beside the frame and you're in, straight from your phone. **No apps to install, nothing
+to fuss over.**
 
-Other scripts:
+## ✨ Highlights
 
-```bash
-npm run typecheck    # tsc --noEmit
-npm run lint         # eslint
-npm test             # vitest run
-npm run build        # typecheck + vite build → dist/
-npm run verify       # lint + typecheck + test + build (pre-commit gate)
-```
+- 📷 **A gallery you curate from the couch** — upload, crop, and reorder photos right from your phone.
+- 🎂 **Birthdays it never forgets** — a warm, minimal calendar for the dates that matter.
+- 📱 **Scan-and-go** — a printed QR beside the frame opens everything in your browser. Zero installs.
+- 🪵 **Made for the wall** — a soft, sunlit-linen interface designed to feel at home, not like a gadget.
+- 🌙 **Sips power** — the e-ink display refreshes hourly by day and rests overnight, so a charge lasts and lasts.
+- 🌍 **Speaks your language** — Polish-first, English on tap.
 
-## Run with pm2
+## 🌙 A gentle daily rhythm
 
-```bash
-pm2 start ecosystem.config.cjs   # single app `the-frame` (Vite dev) on :7375
-pm2 logs the-frame
-```
+The e-ink display refreshes once an hour through the day, then rests quietly overnight — its
+last change is at **23:00** and it wakes again at **07:00**. No glowing screen at 3am, and a
+single charge stretches as far as it can.
 
-Later, to serve the built app in production on the same port, swap to the commented
-prod block in `ecosystem.config.cjs` (`tsx server.ts`, needs `npm run build` first).
-
-## QR code
-
-Generate the printable LAN-URL QR (host comes from env — no auto-detection):
+## 🚀 Getting started
 
 ```bash
-FRAME_LAN_HOST=192.168.1.50 npm run qr
-# or: npm run qr -- 192.168.1.50
+npm install      # also wires up the pre-commit hook
+npm run dev      # http://localhost:7375  (or http://<lan-ip>:7375 from your phone)
 ```
 
-Outputs `public/frame-qr.png`, `frame-qr.svg`, and `frame-qr.html` (print this one).
+<details>
+<summary>More commands &amp; configuration</summary>
 
-## Configuration
+```bash
+npm run verify   # lint + typecheck + test + build — the pre-commit gate
+npm run build    # production bundle → dist/
+npm run qr       # print-ready LAN QR → public/frame-qr.{png,svg,html}
+                 # host is explicit: FRAME_LAN_HOST=192.168.1.50 npm run qr
+```
 
-Copy `.env.example` to `.env` and edit. Vars: `PORT` (7375), `FRAME_GALLERY_DIR`,
+Run it for real with **pm2** (single app `the-frame` on `:7375`):
+
+```bash
+pm2 start ecosystem.config.cjs
+```
+
+Configuration lives in `.env` (copy from `.env.example`): `PORT`, `FRAME_GALLERY_DIR`,
 `FRAME_CALENDAR_DB`, `FRAME_LAN_HOST`.
+
+</details>
+
+---
+
+<div align="center">
+<sub>Built with care to live on a wall, not in a drawer.</sub>
+</div>

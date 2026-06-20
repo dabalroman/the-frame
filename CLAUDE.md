@@ -244,6 +244,8 @@ sudo cp ~/projects/the-frame/esphome/the-frame-display.yaml ~/hassio/homeassista
 ```
 Then flash via the ESPHome dashboard or `esphome run`.
 
+**Build / validate without flashing** (the device is usually deep-asleep, so `esphome run` can't reach it): compile via the HA add-on image — `docker run --rm -v <tmpdir>:/config --entrypoint esphome ghcr.io/esphome/esphome-hassio:<ver> compile /config/the-frame-display.yaml`, where `<tmpdir>` holds the yaml + a placeholder `secrets.yaml` (`wifi_ssid`/`wifi_password` — real values not needed to compile). Use `config` instead of `compile` for a fast syntax/substitution check. The container writes root-owned artifacts; remove the tmpdir via a container (`docker run --rm -v <parent>:/t alpine rm -rf /t/<name>`).
+
 **Hardware:** XIAO ESP32-S3 Plus. **3 user-programmable buttons** (D3 skipped, not on PCB):
 | Button | GPIO | Action |
 |---|---|---|
