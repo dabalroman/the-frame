@@ -8,7 +8,7 @@ substitutions:
   events_chance: "30"     # 0–100: % chance of showing events screen
   key1_gpio: "2"          # D1 — refresh (current orientation)
   key2_gpio: "3"          # D2 — toggle orientation H↔V, then refresh
-  key3_gpio: "5"          # D4 — WiFi info + QR code screen
+  key3_gpio: "5"          # D4 — status screen (SSID, signal, battery, time, address)
   resume_hour: "7"        # first redraw hour after the overnight gap; auto wakes for hours < this are pushed here
   quiet_timezone: "Europe/Warsaw"
 
@@ -31,7 +31,7 @@ esphome:
                 id(frame_orientation) ? "vertical" : "horizontal");
             } else if (mask & (1ULL << ${key3_gpio})) {
               id(action_mode) = 1;
-              ESP_LOGI("boot", "KEY3: WiFi+QR mode");
+              ESP_LOGI("boot", "KEY3: status screen");
             } else {
               ESP_LOGI("boot", "KEY1 or timer wakeup: refresh");
             }
@@ -134,6 +134,11 @@ font:
     id: font_event_desc
     size: 32
     glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ,.?!'\"()-_:/#%ĄĆĘŁŃÓŚŹŻąćęłńóśźż"
+  # ── Status screen ─────────────────────────────────────────────────────────
+  - file: "gfonts://Nunito"
+    id: font_status_small
+    size: 24
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ,.?!'\"()-_:/#%ĄĆĘŁŃÓŚŹŻąćęłńóśźż"
 
 display:
   - platform: waveshare_epaper
@@ -194,37 +199,76 @@ display:
       };
 
       // Panel is mounted inverted; horizontal=180°, vertical=270°.
-      // WiFi+QR always stays in landscape regardless of frame_orientation.
+      // The status screen always stays in landscape regardless of frame_orientation.
       bool portrait = id(frame_orientation) && id(action_mode) != 1;
       it.set_rotation(portrait
         ? display::DISPLAY_ROTATION_270_DEGREES
         : display::DISPLAY_ROTATION_180_DEGREES);
 
       if (id(action_mode) == 1) {
-        // ── WiFi + QR screen — landscape 800×480 ─────────────────────────────
-        text_box(30, 15, 340, 42, id(font_event_desc), "SIEC", false);
-        text_box(30, 60, 340, 90, id(font_event_date), id(wifi_ssid).state, false);
+        // ── Status screen — landscape 800×480 ────────────────────────────────
+        // Left: system info (incl. current NTP time). Right: last-5 refresh
+        // times. Footer: FW version + build datetime. No QR, no signal bars.
+        it.print(40, 18, id(font_event_date), "The Frame");
+        it.line(40, 78, 760, 78);
 
-        text_box(30, 162, 340, 42, id(font_event_desc), "SYGNAL", false);
+        const int lx = 40;    // label column
+        const int vx = 210;   // value column
+        const int row = 52;
+        int y = 96;
+
+        it.print(lx, y, id(font_event_desc), "Sieć");
+        it.print(vx, y, id(font_event_desc), id(wifi_ssid).state.c_str());
+        y += row;
+
         int rssi = (int)id(wifi_rssi).state;
         int bars = rssi >= -50 ? 5 : rssi >= -60 ? 4 : rssi >= -70 ? 3 : rssi >= -80 ? 2 : 1;
+        it.print(lx, y, id(font_event_desc), "Sygnał");
+        it.printf(vx, y, id(font_event_desc), "%d/5 (%d dBm)", bars, rssi);
+        y += row;
+
+        it.print(lx, y, id(font_event_desc), "Bateria");
+        it.printf(vx, y, id(font_event_desc), "%d%%", (int)id(battery_pct).state);
+        y += row;
+
+        // Current NTP time — confirms SNTP sync is working.
+        it.print(lx, y, id(font_event_desc), "Czas");
+        auto now = id(sntp_time).now();
+        if (now.is_valid())
+          it.strftime(vx, y, id(font_event_desc), "%H:%M:%S", now);
+        else
+          it.print(vx, y, id(font_event_desc), "brak sync.");
+        y += row;
+
+        // Address (full width, small font).
+        it.print(lx, y, id(font_status_small), "Adres:");
+        it.print(vx, y + 4, id(font_status_small), "${frame_url}");
+
+        // Right column: last 5 refresh times (most recent first).
+        it.line(480, 88, 480, 300);
+        it.print(500, 96, id(font_status_small), "Odświeżenia:");
         for (int i = 0; i < 5; i++) {
-          int bh = 16 + i * 8;
-          int by = 278 - bh;
-          if (i < bars) it.filled_rectangle(30 + i * 48, by, 38, bh);
-          else          it.rectangle(30 + i * 48, by, 38, bh);
+          int ry = 134 + i * 34;
+          it.printf(500, ry, id(font_status_small), "%d.", i + 1);
+          uint32_t ts = id(refresh_log)[i];
+          if (ts == 0) {
+            it.print(540, ry, id(font_status_small), "-");
+          } else {
+            auto rt = esphome::ESPTime::from_epoch_local((time_t) ts);
+            it.strftime(540, ry, id(font_status_small), "%m-%d %H:%M:%S", rt);
+          }
         }
-        it.printf(280, 283, id(font_event_desc), "%d dBm", rssi);
 
-        text_box(30, 322, 340, 42, id(font_event_desc), "BATERIA", false);
-        it.printf(30, 368, id(font_event_date), "%d%%", (int)id(battery_pct).state);
-
-        it.printf(30, 440, id(font_event_desc), __DATE__ " " __TIME__);
-
-        // QR code — bottom-right corner with 20px margin
-        int qr_w = id(frame_dl).get_width();
-        int qr_h = id(frame_dl).get_height();
-        it.image(800 - 20 - qr_w, 480 - 20 - qr_h, id(frame_dl));
+        // Footer: firmware build datetime. App.get_compilation_time() is UTC and
+        // ends with a " +0000" offset whose '+' isn't in the font (renders as a
+        // tofu box) — strip it and label UTC ourselves. Uniquely IDs each compile.
+        std::string build_time = App.get_compilation_time();
+        size_t tz = build_time.find('+');
+        if (tz != std::string::npos) {
+          build_time.erase(tz);
+          while (!build_time.empty() && build_time.back() == ' ') build_time.pop_back();
+        }
+        it.printf(40, 448, id(font_status_small), "Build: %s UTC", build_time.c_str());
 
       } else if (id(show_events) && !id(event_title).empty()) {
         // Build date line: "Niedziela" or "Niedziela, 14:00"
@@ -283,7 +327,7 @@ globals:
   - id: action_mode
     type: int
     restore_value: false
-    initial_value: '0'       # 0 = refresh, 1 = WiFi+QR
+    initial_value: '0'       # 0 = refresh, 1 = status screen
 
   - id: auto_wake
     type: bool
@@ -324,6 +368,13 @@ globals:
     type: bool
     restore_value: false
     initial_value: 'false'
+
+  # Last 5 content-refresh times as epoch seconds, most-recent-first (0 = empty).
+  # restore_value so the history survives deep sleep; shown on the status screen.
+  - id: refresh_log
+    type: uint32_t[5]
+    restore_value: true
+    initial_value: '{0, 0, 0, 0, 0}'
 
 output:
   - platform: gpio
@@ -381,7 +432,7 @@ binary_sensor:
     pin: { number: GPIO5, mode: INPUT_PULLUP, inverted: true }
     id: btn_key3
     on_press:
-      - logger.log: "KEY3: WiFi+QR mode"
+      - logger.log: "KEY3: status screen"
       - script.execute: show_wifi_info
 
 script:
@@ -411,26 +462,38 @@ script:
             return secs * 1000UL;
 
   # ── show_wifi_info ────────────────────────────────────────────────────────────
-  # Renders WiFi status + QR code. Stays awake, refreshes RSSI every 10s.
-  # Any button press sets exit_wifi_qr=true, breaking the loop.
-  # Fetches QR image once on entry; on_download_finished re-renders with it.
+  # Renders the status screen (SSID, signal, battery, current NTP time, LAN address).
+  # Stays awake (action_mode stays 1, so nothing calls enter_sleep) — OTA available.
+  # Any button press → its own handler resets action_mode=0 and refreshes content.
   - id: show_wifi_info
     then:
       - lambda: "id(action_mode) = 1;"
       - component.update: the_frame_display
-      - script.execute: fetch_qr
 
   # ── refresh ───────────────────────────────────────────────────────────────────
   # Fetches upcoming events. On a dice roll win, shows the event poster.
   # Otherwise fetches a photo. Both paths end with a display update.
   - id: refresh
     then:
+      # Record this refresh time (epoch, most-recent-first) for the status screen.
+      - lambda: |-
+          auto now = id(sntp_time).now();
+          if (now.is_valid()) {
+            for (int i = 4; i > 0; i--) id(refresh_log)[i] = id(refresh_log)[i - 1];
+            id(refresh_log)[0] = (uint32_t) now.timestamp;
+          }
       - logger.log:
           format: "battery: voltage=%.2fV pct=%.0f%%"
           args: ["id(battery_voltage).state", "id(battery_pct).state"]
       - logger.log: "refresh: fetching events"
       - http_request.get:
-          url: "${frame_url}/api/device/events?days=${events_days}"
+          # ts = device epoch (0 if clock unsynced) so the server access log can
+          # compare the device clock against server time.
+          url: !lambda |-
+            auto now = id(sntp_time).now();
+            uint32_t ts = now.is_valid() ? (uint32_t) now.timestamp : 0;
+            return std::string("${frame_url}/api/device/events?days=${events_days}&ts=") +
+                   std::to_string(ts);
           capture_response: true
           on_response:
             then:
@@ -522,17 +585,8 @@ script:
       - online_image.set_url:
           id: frame_dl
           url: !lambda |-
+            auto now = id(sntp_time).now();
+            uint32_t ts = now.is_valid() ? (uint32_t) now.timestamp : 0;
             return std::string("${frame_url}/api/device/photo?orientation=") +
                    (id(frame_orientation) ? "vertical" : "horizontal") +
-                   "&w=${default_w}&h=${default_h}&invert=1";
-
-  # ── fetch_qr ──────────────────────────────────────────────────────────────────
-  # Loads the QR PNG into the right half of the WiFi info screen.
-  # on_download_finished re-renders the display with the QR visible.
-  - id: fetch_qr
-    then:
-      - logger.log: "fetch_qr: requesting QR image"
-      - online_image.set_url:
-          id: frame_dl
-          url: "${frame_url}/api/device/qr?invert=1"
-      - component.update: frame_dl
+                   "&w=${default_w}&h=${default_h}&invert=1&ts=" + std::to_string(ts);

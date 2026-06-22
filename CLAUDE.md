@@ -51,6 +51,11 @@ mounts it under `/api` on any connect/express stack. **Both** the Vite dev plugi
 (`vite.config.ts`) and the prod server (`server.ts`) call `mountFrameApi`, so dev and prod
 share one router. The SPA fallback in `server.ts` 404s `/api/*` so it never swallows API paths.
 
+`mountFrameApi` logs **every** `/api/*` hit (timestamp · method · full path+query · status · duration)
+to `api-access.log` (in the process cwd / project root, gitignored via `*.log`; override with
+`FRAME_API_LOG`) **and** stdout — append-only, best-effort. Used to watch device fetch timing; the
+device adds a `&ts=` epoch (see Device renderer) so the log can compare device vs server clock.
+
 `frameApiPlugin.ts` dispatches by `pathname`/method (ported from eink-frame's `einkRouter`):
 `health` is matched first, then calendar `/events*` routes, then the gallery handlers. The
 calendar handlers come from `createEventApi(createEventStore(calendar.db))`, wired in
@@ -211,10 +216,14 @@ data. Test files live alongside source as `*.test.ts`.
   QR is composited in the bottom-right corner; its size is clamped to `min(128, w-40, h-40)` so
   small test images don't trigger sharp's "composite must be same size or smaller" error.
 
-`/api/device/frame` is the **primary device endpoint** — the server rolls the X% chance and
-returns either a rendered events PNG or a random photo. The ESPHome firmware calls only this
-endpoint (plus `/api/device/qr` for the WiFi info screen). `/api/device/events` and
-`/api/device/photo` remain available but are no longer called by the firmware.
+**What the firmware actually calls:** `/api/device/events?days=N`, then `/api/device/photo` (the
+device rolls the X% events chance itself). It does **not** call `/api/device/qr` (the status screen
+dropped the QR in #220) nor `/api/device/frame` (that server-dispatch endpoint is documented but
+**unwired** — `renderEventsImage`/`renderQrImage` are currently dead code; reconciling this is **#209**).
+Every firmware request carries a `&ts=<device-epoch>` param (`0` when the clock is unsynced, real UTC
+epoch once SNTP has synced — note the RTC is retained across deep sleep, so timer wakes have a valid
+`ts` immediately while a cold/OTA boot's first refresh sends `ts=0`) so the access log can diff the
+device clock against server time.
 
 ## Gotchas
 
@@ -238,11 +247,24 @@ Routes: `/` → **Home hub** (`src/features/home/Home.tsx`), `/photos` → Galle
 ESPHome firmware for the TRMNL Seeed Studio 7.5" e-ink device. Source at
 `esphome/the-frame-display.yaml`.
 
-**Deploy:**
+**Deploy / OTA flash:** copy the yaml into the HA ESPHome dir (keeps the dashboard source in sync),
+wake the device, then flash via the dashboard or CLI:
 ```bash
-sudo cp ~/projects/the-frame/esphome/the-frame-display.yaml ~/hassio/homeassistant/esphome/
+cp ~/projects/the-frame/esphome/the-frame-display.yaml ~/hassio/homeassistant/esphome/   # dir is rd-owned, no sudo
+# Device must be AWAKE: press KEY3 (status screen stays awake, OTA enabled). Find it via mDNS:
+getent hosts the-frame-display.local
+docker run --rm --network host -v ~/hassio/homeassistant/esphome:/config \
+  --entrypoint esphome ghcr.io/esphome/esphome-hassio:<ver> compile /config/the-frame-display.yaml
+docker run --rm --network host -v ~/hassio/homeassistant/esphome:/config \
+  --entrypoint esphome ghcr.io/esphome/esphome-hassio:<ver> upload  /config/the-frame-display.yaml --device <device-ip>
 ```
-Then flash via the ESPHome dashboard or `esphome run`.
+- **Compile with the *real* `~/hassio/homeassistant/esphome/secrets.yaml`** — wifi creds are baked into
+  the firmware at compile time, so a placeholder secrets file would flash a device that can't rejoin
+  wifi. (Placeholder secrets are for *validation-only* compiles — see below.)
+- **`esphome upload` does NOT compile first** (newer ESPHome) — run `compile` then `upload`, or use `run`.
+  `--network host` lets the container reach the LAN device.
+- **OTA needs the device on the KEY3 status screen** (deep-asleep otherwise). After OTA it reboots into a
+  normal refresh→sleep, so press KEY3 again to view the new status screen.
 
 **Build / validate without flashing** (the device is usually deep-asleep, so `esphome run` can't reach it): compile via the HA add-on image — `docker run --rm -v <tmpdir>:/config --entrypoint esphome ghcr.io/esphome/esphome-hassio:<ver> compile /config/the-frame-display.yaml`, where `<tmpdir>` holds the yaml + a placeholder `secrets.yaml` (`wifi_ssid`/`wifi_password` — real values not needed to compile). Use `config` instead of `compile` for a fast syntax/substitution check. The container writes root-owned artifacts; remove the tmpdir via a container (`docker run --rm -v <parent>:/t alpine rm -rf /t/<name>`).
 
@@ -251,7 +273,7 @@ Then flash via the ESPHome dashboard or `esphome run`.
 |---|---|---|
 | KEY1 (D1) | GPIO2 | Refresh in current orientation |
 | KEY2 (D2) | GPIO3 | Toggle orientation H↔V, then refresh |
-| KEY3 (D4) | GPIO5 | WiFi SSID + signal bars + QR code; stays awake (OTA available); any button press → refresh normal content → sleep |
+| KEY3 (D4) | GPIO5 | Status screen — SSID, signal `x/5` + dBm, battery, current NTP time, LAN address, last-5 refresh times (no QR, no bars); stays awake (OTA available); any button press → refresh normal content → sleep |
 | KEY4 (EN) | — | Hardware RESET only — not programmable |
 
 **Deep sleep:** EXT1 ANY_LOW (GPIO2∥3∥5) + NTP-aligned timer (see below). e-ink retains image during sleep.
@@ -261,6 +283,10 @@ Then flash via the ESPHome dashboard or `esphome run`.
   - **Resume precision is ±~30 min** (RTC drift over the long sleep is uncorrected by design — no overnight re-sync). NTP re-syncs on every daytime wake's WiFi connect, so the clock is fresh whenever the gap edges are evaluated.
 
 **Boot flow:** (auto wake before `resume_hour` → guard sleeps back to 07:00) → fetch `/api/device/events?days=N` → non-empty + `esp_random() % 100 < events_chance` → show event poster; otherwise fetch `/api/device/photo` → display → `enter_sleep` (NTP-aligned).
+
+**Status screen (KEY3 — #220):** a landscape label/value table (always landscape, regardless of `frame_orientation`). Left column: SSID, signal as `x/5 (-NN dBm)` text, battery %, **current NTP time** (`sntp_time.now()`, localized Europe/Warsaw — confirms sync). Full-width: LAN address (`frame_url`). Right column: **last 5 refresh times** from the `refresh_log` global — a `restore_value` `uint32_t[5]` ring buffer of epoch-seconds (most-recent-first), pushed at the top of the `refresh` script when the clock is valid, surviving deep sleep. Footer: firmware build datetime.
+  - **Build datetime is UTC.** `App.get_compilation_time()` returns `YYYY-MM-DD HH:MM:SS +0000` (the build container runs in UTC); the footer shows it as-is, labeled `UTC`, while `Czas`/current-time is local CEST — they intentionally differ by the TZ offset. There is no on-device version field (dropped in #220 — the build datetime alone uniquely IDs each compile).
+  - **The fonts' `glyphs:` set has no `+`.** ESPHome only rasterizes the glyphs listed in each font's `glyphs:` string. The raw `App.get_compilation_time()` rendered a tofu box at the `+0000`, so the lambda strips everything from `+` onward before printing. **Any new on-device text must use only declared glyphs** (or extend `glyphs:`).
 
 **Key substitutions in `esphome/the-frame-display.yaml`:**
 | Substitution | Default | Notes |
@@ -272,7 +298,7 @@ Then flash via the ESPHome dashboard or `esphome run`.
 | `events_days` | `3` | Days ahead to fetch events |
 | `events_chance` | `30` | 0–100 % chance of showing events when events exist (device-side randomness) |
 
-**QR asset:** `public/frame-qr.png` — regenerate with `npm run qr` when the LAN IP changes. Served as-is (natural square size) by `/api/device/qr`; device renders it on the right half of the WiFi+QR screen.
+**QR asset:** `public/frame-qr.png` — regenerate with `npm run qr` when the LAN IP changes. Served as-is (natural square size) by `/api/device/qr`. The device firmware **no longer renders it** (the KEY3 status screen shows the LAN address as text since #220); the endpoint + asset are kept for the printed QR and the planned web-UI print flow (#218).
 
 No HA API component (removes keep-alive overhead vs. the original `trmnl.yaml`). Time comes from **SNTP**, not HA — so the "no HA API" stance still holds even with the `time:` component (#217).
 

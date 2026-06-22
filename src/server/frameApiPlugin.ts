@@ -1,5 +1,17 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
 import { createFrameApi, type FrameApiOptions, type FrameApi } from './frameApi';
+
+// API access log file. Appended (never truncated) so a day's worth of device
+// hits accumulate for later analysis. Path is overridable via FRAME_API_LOG;
+// default is api-access.log in the process cwd (project root, *.log gitignored).
+const API_LOG_FILE = process.env.FRAME_API_LOG ?? path.join(process.cwd(), 'api-access.log');
+
+function logRequest(line: string): void {
+  console.log(line);
+  fs.appendFile(API_LOG_FILE, line + '\n', () => {}); // best-effort; never throw on log failure
+}
 
 type Next = (err?: unknown) => void;
 type Handler = (req: IncomingMessage, res: ServerResponse, next?: Next) => void;
@@ -22,8 +34,18 @@ export function mountFrameApi(stack: MiddlewareStack, opts: FrameApiOptions): vo
 
   const handle: Handler = (req, res, next) => {
     // req.url is already prefix-stripped by connect/express `use('/api', …)`.
-    const pathname = new URL(req.url ?? '/', 'http://x').pathname;
+    const url = req.url ?? '/';
+    const pathname = new URL(url, 'http://x').pathname;
     const method = req.method ?? 'GET';
+
+    // Log every API hit (timestamp, method, full path+query, status, duration) to
+    // a file + stdout so device fetches are visible for later analysis. Covers
+    // dev + prod — both call mountFrameApi.
+    const start = Date.now();
+    res.once('finish', () => {
+      const ms = Date.now() - start;
+      logRequest(`[frame-api] ${new Date().toISOString()} ${method} /api${url} → ${res.statusCode} ${ms}ms`);
+    });
 
     if (method === 'GET' && pathname === '/health') return api.health(req, res);
 
